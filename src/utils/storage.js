@@ -3,8 +3,12 @@
 const RISKS_KEY = "grr.risks.v4"
 const BOARD_KEY = "grr.board.v2"
 const PERIOD_KEY = "grr.period.v2"
-const ORG_KEY = "grr.org.v1"
-const PERSONAS_KEY = "grr.personas.v1"
+// v2: bumped alongside the move to the five-role approval chain (Business
+// Unit/Chief Director/DDG/HOD/Administrator) - a browser holding org
+// structure or personas from the earlier two-role model would otherwise
+// crash the app when switching to a role that didn't exist yet back then.
+const ORG_KEY = "grr.org.v2"
+const PERSONAS_KEY = "grr.personas.v2"
 
 function load(key, seed) {
   try {

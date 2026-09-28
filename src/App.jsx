@@ -31,7 +31,11 @@ export default function App() {
   const [boardCards, setBoardCards] = useState(() => loadBoardCards(BOARD_CARDS))
   const [period, setPeriod] = useState(() => loadPeriod(defaultPeriod()))
   const [orgStructure, setOrgStructure] = useState(() => loadOrgStructure(ORG_STRUCTURE))
-  const [personas, setPersonas] = useState(() => loadPersonas(ROLE_PERSONAS))
+  // Merge over the seed rather than trusting persisted data outright - a
+  // browser holding personas from before a role was added/renamed would
+  // otherwise have `personas[newRole]` come back undefined and crash every
+  // screen that reads it.
+  const [personas, setPersonas] = useState(() => ({ ...ROLE_PERSONAS, ...loadPersonas(ROLE_PERSONAS) }))
   const [selectedNr, setSelectedNr] = useState(null)
   const [formModal, setFormModal] = useState(null) // { mode: 'new' | 'edit', risk }
   const [requestModal, setRequestModal] = useState(null) // risk
