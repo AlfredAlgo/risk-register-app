@@ -11,6 +11,8 @@ import RiskFormModal from './components/RiskFormModal.jsx'
 import RequestUpdateModal from './components/RequestUpdateModal.jsx'
 import RequestDetailModal from './components/RequestDetailModal.jsx'
 import ProposalReviewModal from './components/ProposalReviewModal.jsx'
+import KriModal from './components/KriModal.jsx'
+import AdHocRequestModal from './components/AdHocRequestModal.jsx'
 import { RISKS, BOARD_CARDS } from './data/risks.js'
 import { ORG_STRUCTURE, ROLE_PERSONAS, APPROVAL_CHAIN, ROLES } from './data/orgStructure.js'
 import {
@@ -35,6 +37,8 @@ export default function App() {
   const [requestModal, setRequestModal] = useState(null) // risk
   const [selectedCardId, setSelectedCardId] = useState(null)
   const [proposalReviewNr, setProposalReviewNr] = useState(null)
+  const [kriModalNr, setKriModalNr] = useState(null)
+  const [adHocRequestNr, setAdHocRequestNr] = useState(null)
 
   useEffect(() => { saveRisks(risks) }, [risks])
   useEffect(() => { saveBoardCards(boardCards) }, [boardCards])
@@ -55,11 +59,13 @@ export default function App() {
   const selectedRisk = risks.find(r => r.nr === selectedNr) || null
   const selectedCard = boardCards.find(c => c.id === selectedCardId) || null
   const proposalReviewRisk = risks.find(r => r.nr === proposalReviewNr) || null
+  const kriModalRisk = risks.find(r => r.nr === kriModalNr) || null
+  const adHocRequestRisk = risks.find(r => r.nr === adHocRequestNr) || null
 
   // Only one overlay-style modal is ever shown at a time - stacking two of them
   // pushed the second one out of view under the old in-flow overlay layout, so
   // keep that invariant explicit here rather than relying on CSS alone.
-  const anyModalOpen = Boolean(formModal || requestModal || selectedCardId || proposalReviewNr)
+  const anyModalOpen = Boolean(formModal || requestModal || selectedCardId || proposalReviewNr || kriModalNr || adHocRequestNr)
 
   function historyEntry(patch) {
     return { id: uid(), timestamp: nowIso(), actor: persona.name, actorRole: role, ...patch }
@@ -73,7 +79,22 @@ export default function App() {
     return risk.pendingChange ? { ...risk.pendingChange.data, nr: risk.nr } : risk
   }
 
-  function saveDraft(nr, data) {
+  // The form passes `dateChangeReason` (and optionally `dateChangeAttachment`,
+  // a small { name, type, dataUrl } - demo-only, no backend to store files
+  // properly) as transient fields whenever a target date moved. Both are
+  // logged to history, never stored as permanent fields on the risk.
+  function splitDateReason(data) {
+    const { dateChangeReason, dateChangeAttachment, ...cleanData } = data
+    return { cleanData, dateChangeReason, dateChangeAttachment }
+  }
+
+  function dateChangeEntry(reason, attachment) {
+    if (!reason) return []
+    return [historyEntry({ action: 'edited', summary: `Target date changed: ${reason}`, attachment })]
+  }
+
+  function saveDraft(nr, rawData) {
+    const { cleanData: data, dateChangeReason, dateChangeAttachment } = splitDateReason(rawData)
     if (nr == null) {
       const newNr = nextNr(risks)
       const risk = {
@@ -99,8 +120,9 @@ export default function App() {
         return {
           ...r, ...data, nr,
           approvalStatus: 'Draft',
-          history: [...r.history, historyEntry({ action: 'edited', summary: 'Draft updated.', diff })],
-          scoreHistory: scoreChanged ? appendScoreHistory(r.scoreHistory, data) : r.scoreHistory
+          history: [...r.history, historyEntry({ action: 'edited', summary: 'Draft updated.', diff }), ...dateChangeEntry(dateChangeReason, dateChangeAttachment)],
+          scoreHistory: scoreChanged ? appendScoreHistory(r.scoreHistory, data) : r.scoreHistory,
+          updateRequests: fulfillUpdateRequests(r)
         }
       }
       // Reworking after Changes Required / Rejected, or starting a fresh
@@ -110,13 +132,15 @@ export default function App() {
         ...r,
         approvalStatus: 'Draft',
         pendingChange: { data, submittedBy: null, submittedByRole: null, submittedAt: null },
-        history: [...r.history, historyEntry({ action: 'edited', summary: r.approvalStatus === 'Approved' ? 'Started a new reassessment.' : 'Draft updated.', diff })]
+        history: [...r.history, historyEntry({ action: 'edited', summary: r.approvalStatus === 'Approved' ? 'Started a new reassessment.' : 'Draft updated.', diff }), ...dateChangeEntry(dateChangeReason, dateChangeAttachment)],
+        updateRequests: fulfillUpdateRequests(r)
       }
     }))
     setFormModal(null)
   }
 
-  function submitForApproval(nr, data) {
+  function submitForApproval(nr, rawData) {
+    const { cleanData: data, dateChangeReason, dateChangeAttachment } = splitDateReason(rawData)
     if (nr == null) {
       const newNr = nextNr(risks)
       const risk = {
@@ -143,23 +167,25 @@ export default function App() {
         ...r,
         approvalStatus: 'Submitted', approvalStage: APPROVAL_CHAIN[0],
         pendingChange: { data, submittedBy: persona.name, submittedByRole: role, submittedAt: nowIso() },
-        history: [...r.history, historyEntry({ action: 'proposed', summary: 'Submitted for approval.', diff })]
+        history: [...r.history, historyEntry({ action: 'proposed', summary: 'Submitted for approval.', diff }), ...dateChangeEntry(dateChangeReason, dateChangeAttachment)],
+        updateRequests: fulfillUpdateRequests(r)
       }
     }))
     setFormModal(null)
   }
 
-  function authoriseStage(nr) {
+  function authoriseStage(nr, note) {
     setRisks(rs => rs.map(r => {
       if (r.nr !== nr || !r.pendingChange || r.approvalStage !== approverStageForRole(role)) return r
       const stageIdx = APPROVAL_CHAIN.indexOf(r.approvalStage)
       const isFinal = stageIdx === APPROVAL_CHAIN.length - 1
+      const noteSuffix = note ? ` Note for the next reviewer: ${note}` : ''
       if (!isFinal) {
         const nextStage = APPROVAL_CHAIN[stageIdx + 1]
         return {
           ...r,
           approvalStage: nextStage,
-          history: [...r.history, historyEntry({ action: 'approved', summary: `Authorised — moved to ${ROLES[nextStage].label}.` })]
+          history: [...r.history, historyEntry({ action: 'approved', summary: `Authorised — moved to ${ROLES[nextStage].label}.${noteSuffix}` })]
         }
       }
       const data = r.pendingChange.data
@@ -167,9 +193,14 @@ export default function App() {
       const scoreChanged = r.ir !== data.ir || r.rr !== data.rr
       return {
         ...data, nr,
-        history: [...r.history, historyEntry({ action: 'approved', summary: 'Authorised — approved and applied to the register.', diff })],
+        history: [...r.history, historyEntry({ action: 'approved', summary: `Authorised — approved and applied to the register.${noteSuffix}`, diff })],
         scoreHistory: scoreChanged ? appendScoreHistory(r.scoreHistory, data) : r.scoreHistory,
         comments: r.comments,
+        // `data` is a snapshot from whenever this was submitted - KRIs and
+        // update requests can change on the live risk while a proposal sits
+        // in review, so carry the *current* ones forward, not the stale copy.
+        kriToleranceStatement: r.kriToleranceStatement, kriSummary: r.kriSummary, kris: r.kris,
+        updateRequests: r.updateRequests,
         approvalStatus: 'Approved', approvalStage: null,
         pendingChange: null
       }
@@ -227,9 +258,46 @@ export default function App() {
     setBoardCards(cards => cards.map(c => (c.id === id ? { ...c, mgmtNotes } : c)))
   }
 
+  function extendPeriod(reason) {
+    setPeriod(p => ({
+      ...p,
+      open: true,
+      history: [...(p.history || []), { id: uid(), actor: persona.name, role, reason, timestamp: nowIso() }]
+    }))
+  }
+
   function openRiskFromCard(nr) {
     setSelectedCardId(null)
     setSelectedNr(nr)
+  }
+
+  function updateKris(nr, data) {
+    setRisks(rs => rs.map(r => r.nr === nr ? {
+      ...r,
+      kriToleranceStatement: data.kriToleranceStatement,
+      kriSummary: data.kriSummary,
+      kris: data.kris,
+      history: [...r.history, historyEntry({ action: 'edited', summary: 'Key risk indicators updated.' })]
+    } : r))
+    setKriModalNr(null)
+  }
+
+  // Any approver can ask a specific business unit for an update on a
+  // specific risk even while the capture period is closed - e.g. ahead of
+  // an ad-hoc ESMT meeting. It stays open for editing on just that risk
+  // until the business unit acts on it.
+  function requestAdHocUpdate(nr, reason) {
+    setRisks(rs => rs.map(r => r.nr === nr ? {
+      ...r,
+      updateRequests: [...(r.updateRequests || []), { id: uid(), requestedBy: persona.name, requestedByRole: role, reason, timestamp: nowIso(), fulfilled: false }],
+      history: [...r.history, historyEntry({ action: 'edited', summary: `Requested an ad-hoc update: ${reason}` })]
+    } : r))
+    setAdHocRequestNr(null)
+  }
+
+  function fulfillUpdateRequests(risk) {
+    if (!risk.updateRequests?.some(r => !r.fulfilled)) return risk.updateRequests || []
+    return risk.updateRequests.map(r => ({ ...r, fulfilled: true }))
   }
 
   return (
@@ -247,6 +315,7 @@ export default function App() {
             orgStructure={orgStructure}
             period={period}
             onTogglePeriod={() => setPeriod(p => ({ ...p, open: !p.open }))}
+            onExtendPeriod={extendPeriod}
             onNavigate={setView}
             onOpenRisk={setSelectedNr}
             onOpenProposalReview={setProposalReviewNr}
@@ -289,6 +358,8 @@ export default function App() {
           onRequestUpdate={() => setRequestModal(selectedRisk)}
           onReviewProposal={() => setProposalReviewNr(selectedRisk.nr)}
           onAddComment={addComment}
+          onOpenKri={() => setKriModalNr(selectedRisk.nr)}
+          onOpenAdHocRequest={() => setAdHocRequestNr(selectedRisk.nr)}
         />
       )}
 
@@ -329,9 +400,26 @@ export default function App() {
           risk={proposalReviewRisk}
           canAct={proposalReviewRisk.approvalStage === approverStageForRole(role)}
           onClose={() => setProposalReviewNr(null)}
-          onAuthorise={() => authoriseStage(proposalReviewRisk.nr)}
+          onAuthorise={note => authoriseStage(proposalReviewRisk.nr, note)}
           onRequestChanges={comment => requestChanges(proposalReviewRisk.nr, comment)}
           onReject={reason => rejectSubmission(proposalReviewRisk.nr, reason)}
+        />
+      )}
+
+      {kriModalRisk && (
+        <KriModal
+          risk={kriModalRisk}
+          canEdit={role === 'businessunit' && kriModalRisk.businessUnit === persona.businessUnit}
+          onClose={() => setKriModalNr(null)}
+          onSave={data => updateKris(kriModalRisk.nr, data)}
+        />
+      )}
+
+      {adHocRequestRisk && (
+        <AdHocRequestModal
+          risk={adHocRequestRisk}
+          onCancel={() => setAdHocRequestNr(null)}
+          onSubmit={reason => requestAdHocUpdate(adHocRequestRisk.nr, reason)}
         />
       )}
     </>

@@ -5,5 +5,5 @@ export function currentFy() {
 }
 
 export function defaultPeriod() {
-  return { fy: currentFy(), open: true }
+  return { fy: currentFy(), open: true, history: [] }
 }

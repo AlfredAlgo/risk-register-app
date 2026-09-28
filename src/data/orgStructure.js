@@ -82,7 +82,7 @@ export const ROLES = {
   businessunit: { label: "Business Unit", stage: null },
   chiefdirector: { label: "Chief Director", stage: "chiefdirector" },
   ddg: { label: "DDG", stage: "ddg" },
-  cro: { label: "CRO", stage: "cro" },
+  hod: { label: "HOD", stage: "hod" },
   administrator: { label: "Administrator", stage: null }
 }
 
@@ -90,17 +90,17 @@ export const ROLES = {
 // An ordered list (not hardcoded per-stage branches elsewhere) so inserting a
 // compliance-review stage later, if the client asks for one, is one line here
 // plus a persona - not a rewrite of the approval logic.
-export const APPROVAL_CHAIN = ["chiefdirector", "ddg", "cro"]
+export const APPROVAL_CHAIN = ["chiefdirector", "ddg", "hod"]
 
 // One named demo persona per role. Distinct names (not one shared identity
 // relabeled) so a demo doesn't show one person approving their own
 // submission as they switch roles. Business Unit and Chief Director sit in
 // the real Resource Management chief directorate so the main demo thread
-// (capture -> Chief Director -> DDG -> CRO) walks through real EGOV names.
+// (capture -> Chief Director -> DDG -> HOD) walks through real EGOV names.
 export const ROLE_PERSONAS = {
   businessunit: { name: "Freddy Mahlangu", businessUnit: "Human Resource" },
   chiefdirector: { name: "Nomvula Khumalo", chiefDirectorate: "Resource Management" },
   ddg: { name: "Sipho Radebe" },
-  cro: { name: "Zanele Dube" },
+  hod: { name: "Zanele Dube" },
   administrator: { name: "Thabo Sithole" }
 }

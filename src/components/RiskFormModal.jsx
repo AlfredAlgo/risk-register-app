@@ -2,7 +2,10 @@ import { useState } from 'react'
 import { CATEGORIES, RESPONSES, OUTCOMES } from '../data/risks.js'
 import { allBusinessUnits, allChiefDirectorates } from '../data/orgStructure.js'
 import { COMPLIANCE_UNIVERSE, COMPLIANCE_CATEGORIES, complianceActByName } from '../data/complianceUniverse.js'
-import { emptyRisk, computeScore, scoreClass, LIKELIHOOD_LABELS, IMPACT_LABELS, RISK_TYPES } from '../utils/helpers.jsx'
+import {
+  emptyRisk, computeScore, scoreClass, LIKELIHOOD_LABELS, IMPACT_LABELS, RISK_TYPES,
+  ROOT_CAUSE_CATEGORIES, CONTROL_CATEGORIES, ACTION_PLAN_STATUSES, actionPlanStatusLabel
+} from '../utils/helpers.jsx'
 
 function ListField({ label, items, onChange, placeholder }) {
   function setItem(i, value) {
@@ -35,13 +38,48 @@ function ListField({ label, items, onChange, placeholder }) {
   )
 }
 
+// Root causes and controls both carry a classification alongside the text -
+// source (people/process/systems/external) for causes, control type
+// (preventive/detective/corrective/directive) for controls.
+function CategoryListField({ label, items, categories, onChange, placeholder, emptyItem }) {
+  function setItem(i, patch) {
+    onChange(items.map((it, idx) => (idx === i ? { ...it, ...patch } : it)))
+  }
+  function addItem() {
+    onChange([...items, emptyItem()])
+  }
+  function removeItem(i) {
+    onChange(items.filter((_, idx) => idx !== i))
+  }
+  return (
+    <div className="form-field">
+      <label>{label}</label>
+      {items.map((it, i) => (
+        <div className="list-row cat-row" key={i}>
+          <select value={it.category} onChange={e => setItem(i, { category: e.target.value })}>
+            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <input
+            type="text"
+            value={it.text}
+            placeholder={placeholder}
+            onChange={e => setItem(i, { text: e.target.value })}
+          />
+          <button type="button" className="btn ghost sm" onClick={() => removeItem(i)} disabled={items.length <= 1}>Remove</button>
+        </div>
+      ))}
+      <button type="button" className="btn ghost sm" onClick={addItem}>+ Add</button>
+    </div>
+  )
+}
+
 function ActionPlanField({ items, onChange }) {
   function setItem(i, patch) {
     const next = items.map((a, idx) => (idx === i ? { ...a, ...patch } : a))
     onChange(next)
   }
   function addItem() {
-    onChange([...items, { plan: '', progress: '', target: '', status: 'amber' }])
+    onChange([...items, { plan: '', progress: '', target: '', status: 'inprogress' }])
   }
   function removeItem(i) {
     onChange(items.filter((_, idx) => idx !== i))
@@ -65,9 +103,7 @@ function ActionPlanField({ items, onChange }) {
               value={a.target} onChange={e => setItem(i, { target: e.target.value })}
             />
             <select value={a.status} onChange={e => setItem(i, { status: e.target.value })}>
-              <option value="green">On track</option>
-              <option value="amber">At risk</option>
-              <option value="red">Overdue</option>
+              {ACTION_PLAN_STATUSES.map(s => <option key={s} value={s}>{actionPlanStatusLabel[s]}</option>)}
             </select>
             <button type="button" className="btn ghost sm" onClick={() => removeItem(i)} disabled={items.length <= 1}>Remove</button>
           </div>
@@ -108,11 +144,30 @@ function ScorePicker({ title, likelihood, impact, onLikelihood, onImpact }) {
 
 export default function RiskFormModal({ mode, risk, defaultBusinessUnit, orgStructure, onCancel, onSaveDraft, onSubmit }) {
   const [form, setForm] = useState(() => risk ? { ...risk } : emptyRisk({ businessUnit: defaultBusinessUnit }))
+  const [dateChangeReason, setDateChangeReason] = useState('')
+  const [dateChangeAttachment, setDateChangeAttachment] = useState(null)
+  const [attachError, setAttachError] = useState('')
   const [error, setError] = useState('')
   const businessUnits = allBusinessUnits(orgStructure)
   const accountableUnitOptions = [...businessUnits, ...allChiefDirectorates(orgStructure)]
   const isCompliance = form.riskType === 'Compliance'
   const selectedAct = complianceActByName(form.act)
+
+  // Progress tracking only makes sense once a risk has been through approval
+  // at least once - before that there's nothing to have progressed against.
+  // Once it's been approved a first time, it stays a live, editable figure
+  // even while a later reassessment is in Draft/Submitted.
+  const everApproved = mode === 'edit' && (risk?.approvalStatus === 'Approved' || (risk?.history || []).some(h => h.action === 'approved'))
+
+  // A target-date change (the risk's own, or any action-plan item's) needs a
+  // written reason on record - compare against the values the form opened
+  // with, not against every keystroke.
+  const originalTargetDate = mode === 'edit' ? (risk?.targetDate ?? '') : null
+  const originalActionTargets = mode === 'edit' ? (risk?.actionPlan || []).map(a => a.target) : null
+  const datesChanged = mode === 'edit' && (
+    form.targetDate !== originalTargetDate ||
+    JSON.stringify(form.actionPlan.map(a => a.target)) !== JSON.stringify(originalActionTargets)
+  )
 
   function set(patch) {
     setForm(f => ({ ...f, ...patch }))
@@ -122,25 +177,51 @@ export default function RiskFormModal({ mode, risk, defaultBusinessUnit, orgStru
     setForm(f => ({ ...f, ownership: { ...f.ownership, ...patch } }))
   }
 
+  // Demo-only: reads the file straight into a base64 data URL so it can live
+  // in localStorage alongside the risk's history entry. There's no backend
+  // in this prototype to store files properly - capped small on purpose.
+  function handleAttachFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) {
+      setAttachError('Keep supporting documents under 2MB for this demo.')
+      e.target.value = ''
+      return
+    }
+    setAttachError('')
+    const reader = new FileReader()
+    reader.onload = () => setDateChangeAttachment({ name: file.name, type: file.type, dataUrl: reader.result })
+    reader.readAsDataURL(file)
+  }
+
   function clean() {
     // nr / history / scoreHistory / comments / approvalStatus / approvalStage /
     // pendingChange are managed by the caller (App.jsx), not by this form -
     // drop whatever snapshot of them we picked up from `risk`.
-    const { nr: _nr, history: _h, scoreHistory: _sh, comments: _c, approvalStatus: _as, approvalStage: _ag, pendingChange: _pc, ...formFields } = form
+    const {
+      nr: _nr, history: _h, scoreHistory: _sh, comments: _c, approvalStatus: _as, approvalStage: _ag, pendingChange: _pc,
+      kriToleranceStatement: _kt, kriSummary: _ks, kris: _kr, updateRequests: _ur,
+      ...formFields
+    } = form
     return {
       ...formFields,
       ir: computeScore(form.irLikelihood, form.irImpact),
       rr: computeScore(form.rrLikelihood, form.rrImpact),
-      progressPct: Number(form.progressPct),
-      rootCauses: form.rootCauses.filter(x => x.trim()),
-      controls: form.controls.filter(x => x.trim()),
+      progressPct: everApproved ? Number(form.progressPct) : 0,
+      rootCauses: form.rootCauses.filter(x => x.text.trim()),
+      controls: form.controls.filter(x => x.text.trim()),
+      consequences: form.consequences.filter(x => x.trim()),
       actionPlan: form.actionPlan.filter(a => a.plan.trim()),
       act: isCompliance ? form.act : '',
       provisionReference: isCompliance ? form.provisionReference : '',
       ownership: {
         accountableUnit: form.ownership.accountableUnit,
         responsiblePersons: form.ownership.responsiblePersons.filter(x => x.trim())
-      }
+      },
+      // Transient - App.jsx logs these to history and never stores them as
+      // permanent fields on the risk.
+      dateChangeReason: datesChanged ? dateChangeReason.trim() : undefined,
+      dateChangeAttachment: datesChanged ? (dateChangeAttachment || undefined) : undefined
     }
   }
 
@@ -155,6 +236,10 @@ export default function RiskFormModal({ mode, risk, defaultBusinessUnit, orgStru
     }
     if (isCompliance && !form.act) {
       setError('Please select the Act/Regulation this compliance risk relates to.')
+      return false
+    }
+    if (datesChanged && !dateChangeReason.trim()) {
+      setError('A target date has changed - please give a reason, for the audit trail.')
       return false
     }
     return true
@@ -271,8 +356,17 @@ export default function RiskFormModal({ mode, risk, defaultBusinessUnit, orgStru
             </div>
           )}
 
-          <ListField label="Root causes" items={form.rootCauses} onChange={v => set({ rootCauses: v })} placeholder="Root cause" />
-          <ListField label="Current controls" items={form.controls} onChange={v => set({ controls: v })} placeholder="Control" />
+          <CategoryListField
+            label="Root causes" items={form.rootCauses} categories={ROOT_CAUSE_CATEGORIES}
+            onChange={v => set({ rootCauses: v })} placeholder="Root cause"
+            emptyItem={() => ({ category: 'Process', text: '' })}
+          />
+          <CategoryListField
+            label="Current controls" items={form.controls} categories={CONTROL_CATEGORIES}
+            onChange={v => set({ controls: v })} placeholder="Control"
+            emptyItem={() => ({ category: 'Preventive', text: '' })}
+          />
+          <ListField label="Consequences" items={form.consequences} onChange={v => set({ consequences: v })} placeholder="What could actually happen" />
 
           <div className="field-row">
             <ScorePicker
@@ -307,6 +401,25 @@ export default function RiskFormModal({ mode, risk, defaultBusinessUnit, orgStru
 
           <ActionPlanField items={form.actionPlan} onChange={v => set({ actionPlan: v })} />
 
+          {datesChanged && (
+            <div className="form-field date-change-field">
+              <label>Reason for the target date change</label>
+              <textarea
+                rows={2} value={dateChangeReason} onChange={e => setDateChangeReason(e.target.value)}
+                placeholder="Required whenever a target date moves — kept on the audit trail"
+              />
+              <label style={{ marginTop: 10 }}>Supporting document (optional)</label>
+              <input type="file" onChange={handleAttachFile} />
+              {attachError && <div className="form-error" style={{ marginTop: 8 }}>{attachError}</div>}
+              {dateChangeAttachment && (
+                <div className="attach-preview">
+                  📎 {dateChangeAttachment.name}
+                  <button type="button" className="link-btn" onClick={() => setDateChangeAttachment(null)}>Remove</button>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="form-field">
             <label>Accountable unit</label>
             <select value={form.ownership.accountableUnit} onChange={e => setOwnership({ accountableUnit: e.target.value })}>
@@ -324,7 +437,12 @@ export default function RiskFormModal({ mode, risk, defaultBusinessUnit, orgStru
           <div className="field-row">
             <div className="form-field">
               <label>Overall progress (%)</label>
-              <input type="number" min={0} max={100} value={form.progressPct} onChange={e => set({ progressPct: e.target.value })} />
+              <input
+                type="number" min={0} max={100} value={everApproved ? form.progressPct : 0}
+                disabled={!everApproved}
+                onChange={e => set({ progressPct: e.target.value })}
+              />
+              {!everApproved && <div className="field-caption">Not applicable until this risk has been through approval once.</div>}
             </div>
             <div className="form-field">
               <label>Target date</label>

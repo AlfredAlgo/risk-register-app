@@ -27,8 +27,12 @@ export function scopeRisksForRole(risks, role, persona, orgStructure) {
 // the published fields until the new cycle is itself approved.
 export function canEditRisk(risk, role, persona, periodOpen) {
   if (role !== 'businessunit') return false
-  if (!periodOpen) return false
   if (risk && risk.businessUnit !== persona.businessUnit) return false
+  // The capture period being closed normally blocks editing - unless an
+  // approver has explicitly asked this specific risk for an ad-hoc update
+  // (e.g. ahead of an ESMT meeting), which opens just that one risk back up.
+  const hasOpenUpdateRequest = risk?.updateRequests?.some(r => !r.fulfilled)
+  if (!periodOpen && !hasOpenUpdateRequest) return false
   return !risk || risk.approvalStatus !== 'Submitted'
 }
 

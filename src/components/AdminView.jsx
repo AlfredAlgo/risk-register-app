@@ -135,7 +135,7 @@ export default function AdminView({ orgStructure, onChangeOrgStructure, personas
                     {orgStructure.flatMap(b => chiefDirectoratesInBranch(b.branch, orgStructure)).map(cd => <option key={cd} value={cd}>{cd}</option>)}
                   </select>
                 )}
-                {(key === 'ddg' || key === 'cro' || key === 'administrator') && <span className="sub">EGOV-wide</span>}
+                {(key === 'ddg' || key === 'hod' || key === 'administrator') && <span className="sub">EGOV-wide</span>}
               </td>
             </tr>
           ))}

@@ -14,6 +14,7 @@ export const FIELD_LABELS = {
   rrImpact: "Residual impact",
   response: "Risk response",
   actionPlan: "Action plan",
+  consequences: "Consequences",
   act: "Act / regulation",
   provisionReference: "Provision reference",
   ownership: "Ownership",
@@ -32,6 +33,7 @@ function stringifyField(field, v) {
   if (Array.isArray(v)) {
     if (!v.length) return "—"
     if (field === "actionPlan") return v.map(a => a.plan).filter(Boolean).join("; ") || "—"
+    if (field === "rootCauses" || field === "controls") return v.map(x => `[${x.category}] ${x.text}`).filter(Boolean).join("; ") || "—"
     return v.filter(Boolean).join("; ") || "—"
   }
   if (v === "" || v === null || v === undefined) return "—"

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { scoreClass, statusLabel, formatDateShort, formatDateTime } from '../utils/helpers.jsx'
+import { scoreClass, formatDateShort, formatDateTime, actionPlanStatusLabel, actionPlanStatusTone } from '../utils/helpers.jsx'
 import { ROLES } from '../data/orgStructure.js'
 import { complianceActByName } from '../data/complianceUniverse.js'
 import { approverStageForRole, canEditRisk } from '../utils/permissions.js'
@@ -36,6 +36,9 @@ function HistoryItem({ entry }) {
               {open ? 'Hide changes' : 'Show changes'}
             </button>
           )}
+          {entry.attachment && (
+            <a className="link-btn" href={entry.attachment.dataUrl} download={entry.attachment.name}>📎 {entry.attachment.name}</a>
+          )}
         </div>
         {hasDiff && open && <DiffList diffs={entry.diff} />}
       </div>
@@ -43,7 +46,7 @@ function HistoryItem({ entry }) {
   )
 }
 
-export default function RiskPanel({ risk, role, periodOpen, onClose, onOpenForm, onRequestUpdate, onReviewProposal, onAddComment }) {
+export default function RiskPanel({ risk, role, periodOpen, onClose, onOpenForm, onRequestUpdate, onReviewProposal, onAddComment, onOpenKri, onOpenAdHocRequest }) {
   const [commentText, setCommentText] = useState('')
   const [showAllHistory, setShowAllHistory] = useState(false)
 
@@ -54,6 +57,9 @@ export default function RiskPanel({ risk, role, periodOpen, onClose, onOpenForm,
   const history = [...(risk.history || [])].reverse()
   const visibleHistory = showAllHistory ? history : history.slice(0, 3)
   const scoreHistory = risk.scoreHistory || []
+  const everApproved = risk.approvalStatus === 'Approved' || (risk.history || []).some(h => h.action === 'approved')
+  const openUpdateRequest = (risk.updateRequests || []).find(r => !r.fulfilled)
+  const isApprover = ['chiefdirector', 'ddg', 'hod'].includes(role)
 
   function submitComment(e) {
     e.preventDefault()
@@ -84,6 +90,15 @@ export default function RiskPanel({ risk, role, periodOpen, onClose, onOpenForm,
             )}
           </div>
 
+          {openUpdateRequest && (
+            <div className="approval-banner tone-warn">
+              <div>
+                <strong>Ad-hoc update requested</strong> by {openUpdateRequest.requestedBy} ({ROLES[openUpdateRequest.requestedByRole]?.label}) — {openUpdateRequest.reason}
+                {role === 'businessunit' && periodOpen === false && ' · this risk is editable until you act on it, even though the capture period is closed.'}
+              </div>
+            </div>
+          )}
+
           <div className="field-row">
             <div className="field">
               <label>Inherent risk (IR)</label>
@@ -102,10 +117,21 @@ export default function RiskPanel({ risk, role, periodOpen, onClose, onOpenForm,
           </div>
 
           <div className="block-title">Root causes</div>
-          <ul className="plain">{risk.rootCauses.map((x, i) => <li key={i}>{x}</li>)}</ul>
+          <ul className="plain tagged">{risk.rootCauses.map((x, i) => (
+            <li key={i}><span className="tag-pill">{x.category}</span>{x.text}</li>
+          ))}</ul>
 
           <div className="block-title">Current controls</div>
-          <ul className="plain">{risk.controls.map((x, i) => <li key={i}>{x}</li>)}</ul>
+          <ul className="plain tagged">{risk.controls.map((x, i) => (
+            <li key={i}><span className="tag-pill">{x.category}</span>{x.text}</li>
+          ))}</ul>
+
+          {risk.consequences?.length > 0 && (
+            <>
+              <div className="block-title">Consequences</div>
+              <ul className="plain">{risk.consequences.map((x, i) => <li key={i}>{x}</li>)}</ul>
+            </>
+          )}
 
           {risk.riskType === 'Compliance' && (
             <>
@@ -126,7 +152,7 @@ export default function RiskPanel({ risk, role, periodOpen, onClose, onOpenForm,
             <div className="ap-item" key={i}>
               <div className="ap-plan">{a.plan}</div>
               <div className="ap-progress">{a.progress}</div>
-              <div className="ap-meta"><span>Target: {a.target}</span><span>{statusLabel[a.status]}</span></div>
+              <div className="ap-meta"><span>Target: {a.target}</span><span className={'approval-pill tone-' + actionPlanStatusTone[a.status]}>{actionPlanStatusLabel[a.status]}</span></div>
             </div>
           ))}
 
@@ -143,6 +169,20 @@ export default function RiskPanel({ risk, role, periodOpen, onClose, onOpenForm,
             <>
               <div className="block-title">Score history</div>
               <TrendChart data={scoreHistory} height={140} />
+            </>
+          )}
+
+          {everApproved && (
+            <>
+              <div className="block-title">Key risk indicators</div>
+              <div className="approval-row" style={{ marginBottom: 14 }}>
+                <div className="sub">
+                  {risk.kris?.length > 0 ? `${risk.kris.length} indicator${risk.kris.length > 1 ? 's' : ''} tracked` : 'No indicators recorded yet.'}
+                </div>
+                <button type="button" className="btn ghost sm" onClick={onOpenKri}>
+                  {role === 'businessunit' ? 'Update indicators' : 'View indicators'}
+                </button>
+              </div>
             </>
           )}
 
@@ -186,12 +226,17 @@ export default function RiskPanel({ risk, role, periodOpen, onClose, onOpenForm,
         </div>
         <div className="panel-foot">
           <button className="btn ghost" onClick={onClose}>Close</button>
+          {isApprover && (
+            <button className="btn ghost" onClick={onOpenAdHocRequest} title="Ask this business unit to update this risk now, even if the capture period is closed">
+              Request ad-hoc update
+            </button>
+          )}
           {role === 'businessunit' && (
             <>
               <button className="btn ghost" onClick={onRequestUpdate}>Request assessment update</button>
               <button
                 className="btn" onClick={onOpenForm} disabled={!iCanEdit}
-                title={!periodOpen ? 'The capture period is closed' : !iCanEdit ? 'Not editable while under review' : undefined}
+                title={iCanEdit ? undefined : (!periodOpen ? 'The capture period is closed' : 'Not editable while under review')}
               >
                 {EDIT_LABEL[risk.approvalStatus] || 'Edit'}
               </button>

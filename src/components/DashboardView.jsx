@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { ROLES } from '../data/orgStructure.js'
 import { BOARD_STAGES } from '../data/risks.js'
 import { formatDateShort, computePortfolioTrend } from '../utils/helpers.jsx'
@@ -26,15 +26,25 @@ const HERO_COPY = {
   businessunit: p => ({ eyebrow: `${p.businessUnit} · Business Unit`, body: `Here's what needs your attention in ${p.businessUnit}.` }),
   chiefdirector: p => ({ eyebrow: `${p.chiefDirectorate} · Chief Director`, body: `Submissions awaiting your review across ${p.chiefDirectorate}.` }),
   ddg: () => ({ eyebrow: 'EGOV · DDG', body: 'Submissions awaiting your review across every chief directorate.' }),
-  cro: () => ({ eyebrow: 'EGOV · CRO', body: 'Final sign-off and capture-period control across EGOV.' }),
+  hod: () => ({ eyebrow: 'EGOV · HOD', body: 'Final sign-off and capture-period control across EGOV.' }),
   administrator: () => ({ eyebrow: 'EGOV · Administrator', body: 'Organisational structure and demo personas for the risk register.' })
 }
 
-export default function DashboardView({ risks, boardCards, role, persona, orgStructure, period, onTogglePeriod, onNavigate, onOpenRisk, onOpenProposalReview, onOpenCard, onQuickAdd }) {
+export default function DashboardView({ risks, boardCards, role, persona, orgStructure, period, onTogglePeriod, onExtendPeriod, onNavigate, onOpenRisk, onOpenProposalReview, onOpenCard, onQuickAdd }) {
   const isBusinessUnit = role === 'businessunit'
-  const isCro = role === 'cro'
+  const isHod = role === 'hod'
+  const isDdg = role === 'ddg'
   const isAdmin = role === 'administrator'
   const myStage = approverStageForRole(role)
+  const [showExtendForm, setShowExtendForm] = useState(false)
+  const [extendReason, setExtendReason] = useState('')
+
+  function submitExtend() {
+    if (!extendReason.trim()) return
+    onExtendPeriod(extendReason.trim())
+    setExtendReason('')
+    setShowExtendForm(false)
+  }
 
   const scope = useMemo(() => scopeRisksForRole(risks, role, persona, orgStructure), [risks, role, persona, orgStructure])
   const scopeBusinessUnits = new Set(scope.map(r => r.businessUnit))
@@ -91,7 +101,7 @@ export default function DashboardView({ risks, boardCards, role, persona, orgStr
         {isBusinessUnit && (
           <button className="btn hero-btn" onClick={onQuickAdd}>+ Add risk</button>
         )}
-        {isCro && (
+        {isHod && (
           <button className="btn hero-btn" onClick={onTogglePeriod}>
             {period.open ? `Close FY ${period.fy} capture period` : `Open FY ${period.fy} capture period`}
           </button>
@@ -114,10 +124,36 @@ export default function DashboardView({ risks, boardCards, role, persona, orgStr
             <StatTile label="Needs attention (at risk + overdue)" value={counts.amber + counts.red} />
           </div>
 
-          {!isCro ? null : (
+          {(isHod || isDdg) && (
             <div className="period-banner">
-              Capture period for FY {period.fy}: <strong>{period.open ? 'Open' : 'Closed'}</strong>
-              {!period.open && ' — business units cannot capture or edit risks until this reopens.'}
+              <div>
+                Capture period for FY {period.fy}: <strong>{period.open ? 'Open' : 'Closed'}</strong>
+                {!period.open && ' — business units cannot capture or edit risks until this reopens.'}
+              </div>
+              {isDdg && !period.open && !showExtendForm && (
+                <button type="button" className="btn ghost sm" onClick={() => setShowExtendForm(true)}>Request period extension</button>
+              )}
+              {isDdg && !period.open && showExtendForm && (
+                <div className="extend-form">
+                  <textarea
+                    rows={2} value={extendReason} onChange={e => setExtendReason(e.target.value)}
+                    placeholder="Reason for extending the period (kept for audit purposes)"
+                  />
+                  <div className="extend-form-actions">
+                    <button type="button" className="btn ghost sm" onClick={() => { setShowExtendForm(false); setExtendReason('') }}>Cancel</button>
+                    <button type="button" className="btn sm" disabled={!extendReason.trim()} onClick={submitExtend}>Extend period</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {period.history?.length > 0 && (isHod || isDdg) && (
+            <div className="period-history">
+              {period.history.slice().reverse().slice(0, 3).map(h => (
+                <div key={h.id} className="period-history-row">
+                  <strong>{h.actor}</strong> ({h.role}) extended the period — {h.reason}
+                </div>
+              ))}
             </div>
           )}
 

@@ -1,10 +1,8 @@
-// v2: risk schema gained the approval chain (approvalStatus/approvalStage) and
-// business units moved to the EGOV org structure - bumped so a browser holding
-// v1 (two-role) prototype data falls back to fresh seed data instead of
-// crashing on the old shape.
-const RISKS_KEY = "grr.risks.v2"
+// v4: added Key Risk Indicators (kris/kriToleranceStatement/kriSummary) and
+// ad-hoc update requests (updateRequests) to each risk.
+const RISKS_KEY = "grr.risks.v4"
 const BOARD_KEY = "grr.board.v2"
-const PERIOD_KEY = "grr.period.v1"
+const PERIOD_KEY = "grr.period.v2"
 const ORG_KEY = "grr.org.v1"
 const PERSONAS_KEY = "grr.personas.v1"
 

@@ -87,7 +87,58 @@ export function computePortfolioTrend(risks) {
   })
 }
 
-export const RISK_TYPES = ["Operational", "Compliance"]
+export const RISK_TYPES = ["Operational", "Compliance", "Strategic", "Ethics", "Fraud"]
+
+// Root cause / control classification, from the client's own review of the
+// register - root causes by source (people/process/systems/external),
+// controls by control type (the four COSO-style categories they named).
+export const ROOT_CAUSE_CATEGORIES = ["People", "Process", "Systems", "External"]
+export const CONTROL_CATEGORIES = ["Preventive", "Detective", "Corrective", "Directive"]
+
+export function emptyRootCause() {
+  return { category: "Process", text: "" }
+}
+export function emptyControl() {
+  return { category: "Preventive", text: "" }
+}
+
+// Action plan items get their own status set, distinct from the risk's own
+// on-track/at-risk/overdue status - "In Progress" replaces "On track" (the
+// client's own language) and "Implemented" is a real fourth state, not a
+// shade of on-track.
+export const ACTION_PLAN_STATUSES = ["inprogress", "atrisk", "overdue", "implemented"]
+export const actionPlanStatusLabel = {
+  inprogress: "In Progress", atrisk: "At risk", overdue: "Overdue", implemented: "Implemented"
+}
+export const actionPlanStatusTone = {
+  inprogress: "good", atrisk: "warn", overdue: "bad", implemented: "info"
+}
+
+// Key Risk Indicators - modelled on the client's real ICTSS Risk Appetite
+// Statement & KRI template: each risk can carry one shared tolerance
+// statement/summary plus several measurable indicators, each with its own
+// quarterly target, five threshold bands, and a running list of period
+// results. Bands are the same five the client's document uses; the result's
+// band is set by whoever records it (matching the source, which is
+// hand-classified against free-text threshold ranges, not computed).
+export const KRI_BANDS = ["baseline", "low", "medium", "high", "veryHigh"]
+export const kriBandLabel = {
+  baseline: "Baseline", low: "Low risk", medium: "Medium risk", high: "High risk", veryHigh: "Very high risk"
+}
+export const kriBandTone = {
+  baseline: "good", low: "good", medium: "warn", high: "bad", veryHigh: "bad"
+}
+
+export function emptyKriResult() {
+  return { id: uid(), period: "", value: "", band: "baseline" }
+}
+export function emptyKri() {
+  return {
+    id: uid(), indicator: "", quarterlyTarget: "",
+    thresholds: { baseline: "", low: "", medium: "", high: "", veryHigh: "" },
+    results: [emptyKriResult()]
+  }
+}
 
 // Applies to every risk type, not just Compliance - an accountable org unit
 // plus the named people actually responsible, rather than one free-text
@@ -110,8 +161,9 @@ export function emptyRisk(defaults = {}) {
     businessUnit: defaults.businessUnit || "",
     category: "",
     risk: "",
-    rootCauses: [""],
-    controls: [""],
+    rootCauses: [emptyRootCause()],
+    controls: [emptyControl()],
+    consequences: [""],
     irLikelihood: 4,
     irImpact: 3,
     rrLikelihood: 3,
@@ -119,7 +171,7 @@ export function emptyRisk(defaults = {}) {
     ir: 12,
     rr: 9,
     response: "Mitigate",
-    actionPlan: [{ plan: "", progress: "", target: "", status: "amber" }],
+    actionPlan: [{ plan: "", progress: "", target: "", status: "inprogress" }],
     act: "",
     provisionReference: "",
     ownership: emptyOwnership({ accountableUnit: defaults.businessUnit }),
@@ -132,7 +184,11 @@ export function emptyRisk(defaults = {}) {
     comments: [],
     approvalStatus: "Draft",
     approvalStage: null,
-    pendingChange: null
+    pendingChange: null,
+    kriToleranceStatement: "",
+    kriSummary: "",
+    kris: [],
+    updateRequests: []
   }
 }
 
