@@ -50,7 +50,7 @@ export default function ReportsView({ risks }) {
 
   const portfolioTrend = useMemo(() => computePortfolioTrend(filtered), [filtered])
 
-  const statusOrder = [['On track', 'green'], ['At risk', 'amber'], ['Delayed', 'red']]
+  const statusOrder = [['On track', 'green'], ['At risk', 'amber'], ['Overdue', 'red']]
 
   const filterLabel = isOverall
     ? 'Overall report — all business units, all financial years'
@@ -60,14 +60,21 @@ export default function ReportsView({ risks }) {
         filters.month ? monthLabelFromKey(filters.month) : 'All months'
       ].join(' · ')
 
-  function handleExportPdf() {
-    exportReportPdf({
-      risks: filtered,
-      filterLabel,
-      summary: { total, highIr: highRisk, green: counts.green, amber: counts.amber, red: counts.red },
-      byBU,
-      byStatus: counts
-    })
+  const [exportingPdf, setExportingPdf] = useState(false)
+
+  async function handleExportPdf() {
+    setExportingPdf(true)
+    try {
+      await exportReportPdf({
+        risks: filtered,
+        filterLabel,
+        summary: { total, highIr: highRisk, green: counts.green, amber: counts.amber, red: counts.red },
+        byBU,
+        byStatus: counts
+      })
+    } finally {
+      setExportingPdf(false)
+    }
   }
 
   function handleExportCsv() {
@@ -97,7 +104,9 @@ export default function ReportsView({ risks }) {
         </button>
         <div className="spacer" />
         <button className="btn ghost" onClick={handleExportCsv} disabled={total === 0}>Export CSV</button>
-        <button className="btn" onClick={handleExportPdf} disabled={total === 0}>Export PDF</button>
+        <button className="btn" onClick={handleExportPdf} disabled={total === 0 || exportingPdf}>
+          {exportingPdf ? 'Preparing PDF…' : 'Export PDF'}
+        </button>
       </div>
       <div className="report-scope">{filterLabel} · {total} risk{total === 1 ? '' : 's'}</div>
 
@@ -111,7 +120,7 @@ export default function ReportsView({ risks }) {
             <div className="metric"><div className="num"><CountUp target={total} /></div><div className="lbl">Total risks logged</div></div>
             <div className="metric"><div className="num"><CountUp target={highRisk} /></div><div className="lbl">High inherent risk (IR ≥ 20)</div></div>
             <div className="metric"><div className="num"><CountUp target={counts.green} /></div><div className="lbl">On track</div></div>
-            <div className="metric"><div className="num"><CountUp target={counts.red} /></div><div className="lbl">Delayed</div></div>
+            <div className="metric"><div className="num"><CountUp target={counts.red} /></div><div className="lbl">Overdue</div></div>
           </div>
 
           <div className="report-grid">
