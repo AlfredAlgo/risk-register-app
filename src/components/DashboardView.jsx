@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import { ROLES } from '../data/orgStructure.js'
 import { BOARD_STAGES } from '../data/risks.js'
-import { formatDateShort, computePortfolioTrend } from '../utils/helpers.jsx'
+import { formatDateShort, formatDateTime, computePortfolioTrend } from '../utils/helpers.jsx'
 import { getReminders } from '../utils/reminders.js'
-import { scopeRisksForRole, approverStageForRole } from '../utils/permissions.js'
+import { scopeRisksForRole, approverStageForRole, isReviewWindowOpen } from '../utils/permissions.js'
+import { daysInStage, isStageOverdue } from '../utils/sla.js'
 import { StatTile, AnimatedBar } from './StatWidgets.jsx'
 import RiskHeatmap from './RiskHeatmap.jsx'
 import TrendChart from './TrendChart.jsx'
@@ -23,17 +24,23 @@ function ReminderRow({ item, onOpenRisk }) {
 }
 
 const HERO_COPY = {
-  businessunit: p => ({ eyebrow: `${p.businessUnit} · Business Unit`, body: `Here's what needs your attention in ${p.businessUnit}.` }),
+  riskcapturer: () => ({ eyebrow: 'EGOV · Risk Capturer', body: 'Risks captured on behalf of business units across EGOV.' }),
+  director: p => ({ eyebrow: `${p.businessUnit} · Director`, body: `Here's what needs your attention in ${p.businessUnit}.` }),
   chiefdirector: p => ({ eyebrow: `${p.chiefDirectorate} · Chief Director`, body: `Submissions awaiting your review across ${p.chiefDirectorate}.` }),
   ddg: () => ({ eyebrow: 'EGOV · DDG', body: 'Submissions awaiting your review across every chief directorate.' }),
-  hod: () => ({ eyebrow: 'EGOV · HOD', body: 'Final sign-off and capture-period control across EGOV.' }),
+  cro: () => ({ eyebrow: 'EGOV · CRO', body: 'Recommendations, acknowledgements, and review-window monitoring across EGOV.' }),
+  hod: () => ({ eyebrow: 'EGOV · HOD', body: 'Final sign-off on strategic risks, and capture-period control across EGOV.' }),
   administrator: () => ({ eyebrow: 'EGOV · Administrator', body: 'Organisational structure and demo personas for the risk register.' })
 }
 
-export default function DashboardView({ risks, boardCards, role, persona, orgStructure, period, onTogglePeriod, onExtendPeriod, onNavigate, onOpenRisk, onOpenProposalReview, onOpenCard, onQuickAdd }) {
-  const isBusinessUnit = role === 'businessunit'
+export default function DashboardView({
+  risks, boardCards, role, persona, orgStructure, period, onTogglePeriod, onExtendPeriod, onNavigate, onOpenRisk, onOpenProposalReview, onOpenCard, onQuickAdd,
+  notifications, reviewWindow, onOpenReviewWindowModal, stageSla
+}) {
+  const isRiskCapturer = role === 'riskcapturer'
   const isHod = role === 'hod'
   const isDdg = role === 'ddg'
+  const isCro = role === 'cro'
   const isAdmin = role === 'administrator'
   const myStage = approverStageForRole(role)
   const [showExtendForm, setShowExtendForm] = useState(false)
@@ -48,7 +55,7 @@ export default function DashboardView({ risks, boardCards, role, persona, orgStr
 
   const scope = useMemo(() => scopeRisksForRole(risks, role, persona, orgStructure), [risks, role, persona, orgStructure])
   const scopeBusinessUnits = new Set(scope.map(r => r.businessUnit))
-  const scopeCards = isBusinessUnit || role === 'chiefdirector'
+  const scopeCards = role === 'director' || role === 'chiefdirector'
     ? boardCards.filter(c => scopeBusinessUnits.has(c.businessUnit))
     : boardCards
 
@@ -68,8 +75,8 @@ export default function DashboardView({ risks, boardCards, role, persona, orgStr
     [scope, myStage]
   )
   const mySubmissions = useMemo(
-    () => (isBusinessUnit ? scope.filter(r => r.approvalStatus !== 'Approved') : []),
-    [scope, isBusinessUnit]
+    () => (isRiskCapturer ? scope.filter(r => r.approvalStatus !== 'Approved' && r.approvalStatus !== 'Removed') : []),
+    [scope, isRiskCapturer]
   )
 
   const byBU = useMemo(() => {
@@ -90,6 +97,19 @@ export default function DashboardView({ risks, boardCards, role, persona, orgStr
   const trend = useMemo(() => computePortfolioTrend(scope), [scope])
   const hero = HERO_COPY[role](persona)
 
+  const myNotifications = useMemo(
+    () => notifications?.filter(n => n.toRole === role) || [],
+    [notifications, role]
+  )
+  const reviewWindowActive = isReviewWindowOpen(reviewWindow)
+  const touchedDuringWindow = useMemo(() => {
+    if (!reviewWindowActive) return []
+    const since = new Date(reviewWindow.openedAt).getTime()
+    return risks.filter(r => (r.history || []).some(h => h.summary === 'Updated during review window (direct save, no re-approval).' && new Date(h.timestamp).getTime() >= since))
+  }, [risks, reviewWindow, reviewWindowActive])
+
+  const metricLabel = role === 'director' ? 'Risks in my business unit' : role === 'chiefdirector' ? 'Risks in my chief directorate' : 'Total risks (EGOV)'
+
   return (
     <div className="view-enter">
       <div className="dash-hero">
@@ -98,12 +118,17 @@ export default function DashboardView({ risks, boardCards, role, persona, orgStr
           <h2>Welcome back, {persona.name}</h2>
           <p>{hero.body}</p>
         </div>
-        {isBusinessUnit && (
+        {isRiskCapturer && (
           <button className="btn hero-btn" onClick={onQuickAdd}>+ Add risk</button>
         )}
         {isHod && (
           <button className="btn hero-btn" onClick={onTogglePeriod}>
             {period.open ? `Close FY ${period.fy} capture period` : `Open FY ${period.fy} capture period`}
+          </button>
+        )}
+        {(isCro || isDdg) && (
+          <button className="btn hero-btn" onClick={onOpenReviewWindowModal}>
+            {reviewWindowActive ? 'Manage review window' : 'Open review window'}
           </button>
         )}
       </div>
@@ -118,17 +143,53 @@ export default function DashboardView({ risks, boardCards, role, persona, orgStr
       ) : (
         <>
           <div className="metrics">
-            <StatTile label={isBusinessUnit ? 'Risks in my business unit' : role === 'chiefdirector' ? 'Risks in my chief directorate' : 'Total risks (EGOV)'} value={scope.length} />
+            <StatTile label={metricLabel} value={scope.length} />
             <StatTile label="High inherent risk (IR ≥ 20)" value={highRisk} />
             <StatTile label="On track" value={counts.green} />
             <StatTile label="Needs attention (at risk + overdue)" value={counts.amber + counts.red} />
           </div>
 
+          {isCro && myNotifications.length > 0 && (
+            <div className="report-card" style={{ marginBottom: 16 }}>
+              <h4>Notifications</h4>
+              <div className="approval-list">
+                {myNotifications.slice().reverse().map(n => (
+                  <div className="approval-row" key={n.id}>
+                    <div>
+                      <div className="approval-title">{n.message}</div>
+                      <div className="sub">{formatDateTime(n.timestamp)}</div>
+                    </div>
+                    <button className="btn ghost sm" onClick={() => onOpenRisk(n.riskNr)}>View</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(isCro || isDdg) && reviewWindowActive && (
+            <div className="period-banner">
+              <div>
+                Review window open — closes {formatDateShort(reviewWindow.closesAt)}. {reviewWindow.reason}
+                {touchedDuringWindow.length > 0 && ` · ${touchedDuringWindow.length} risk${touchedDuringWindow.length > 1 ? 's' : ''} updated so far.`}
+              </div>
+            </div>
+          )}
+          {(isCro || isDdg) && reviewWindowActive && touchedDuringWindow.length > 0 && (
+            <div className="approval-list" style={{ marginBottom: 16 }}>
+              {touchedDuringWindow.map(r => (
+                <div className="approval-row" key={r.nr}>
+                  <div><div className="approval-title">{r.risk}</div><div className="sub">{r.businessUnit}</div></div>
+                  <button className="btn ghost sm" onClick={() => onOpenRisk(r.nr)}>View</button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {(isHod || isDdg) && (
             <div className="period-banner">
               <div>
                 Capture period for FY {period.fy}: <strong>{period.open ? 'Open' : 'Closed'}</strong>
-                {!period.open && ' — business units cannot capture or edit risks until this reopens.'}
+                {!period.open && ' — the risk team cannot capture or edit risks until this reopens.'}
               </div>
               {isDdg && !period.open && !showExtendForm && (
                 <button type="button" className="btn ghost sm" onClick={() => setShowExtendForm(true)}>Request period extension</button>
@@ -159,8 +220,8 @@ export default function DashboardView({ risks, boardCards, role, persona, orgStr
 
           <div className="report-grid">
             <div className="report-card">
-              <h4>{isBusinessUnit ? 'My submissions' : `Pending approvals${myStage ? ' — ' + ROLES[role].label : ''}`}</h4>
-              {isBusinessUnit ? (
+              <h4>{isRiskCapturer ? 'Open submissions (EGOV-wide)' : `Pending approvals${myStage ? ' — ' + ROLES[role].label : ''}`}</h4>
+              {isRiskCapturer ? (
                 mySubmissions.length === 0 ? (
                   <div className="sub">Nothing awaiting your attention.</div>
                 ) : (
@@ -169,7 +230,7 @@ export default function DashboardView({ risks, boardCards, role, persona, orgStr
                       <div className="approval-row" key={r.nr}>
                         <div>
                           <div className="approval-title">{r.risk}</div>
-                          <div className="sub">{r.approvalStatus}{r.approvalStage ? ` · with ${ROLES[r.approvalStage].label}` : ''}</div>
+                          <div className="sub">{r.businessUnit} · {r.approvalStatus}{r.approvalStage ? ` · with ${ROLES[r.approvalStage].label}` : ''}</div>
                         </div>
                         <button className="btn ghost sm" onClick={() => onOpenRisk(r.nr)}>View</button>
                       </div>
@@ -180,15 +241,22 @@ export default function DashboardView({ risks, boardCards, role, persona, orgStr
                 <div className="sub">Nothing awaiting your review.</div>
               ) : (
                 <div className="approval-list">
-                  {pendingAtMyStage.map(r => (
-                    <div className="approval-row" key={r.nr}>
-                      <div>
-                        <div className="approval-title">{r.risk}</div>
-                        <div className="sub">{r.businessUnit} · submitted by {r.pendingChange?.submittedBy} · {formatDateShort(r.pendingChange?.submittedAt)}</div>
+                  {pendingAtMyStage.map(r => {
+                    const days = daysInStage(r)
+                    const overdue = isStageOverdue(r, stageSla)
+                    return (
+                      <div className="approval-row" key={r.nr}>
+                        <div>
+                          <div className="approval-title">{r.risk}</div>
+                          <div className="sub">
+                            {r.businessUnit} · submitted by {r.pendingChange?.submittedBy} · {formatDateShort(r.pendingChange?.submittedAt)}
+                            {days !== null && <span className={overdue ? 'tone-bad' : ''}> · {days}d in stage{overdue ? ' (overdue)' : ''}</span>}
+                          </div>
+                        </div>
+                        <button className="btn sm" onClick={() => onOpenProposalReview(r.nr)}>Review</button>
                       </div>
-                      <button className="btn sm" onClick={() => onOpenProposalReview(r.nr)}>Review</button>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -242,7 +310,7 @@ export default function DashboardView({ risks, boardCards, role, persona, orgStr
               <button type="button" className="link-btn" onClick={() => onNavigate('board')}>Open assessment board →</button>
             </div>
 
-            {!isBusinessUnit && role !== 'chiefdirector' && (
+            {role !== 'director' && role !== 'chiefdirector' && (
               <div className="report-card">
                 <h4>Risks by business unit</h4>
                 {Object.entries(byBU).map(([bu, n]) => (
@@ -261,7 +329,7 @@ export default function DashboardView({ risks, boardCards, role, persona, orgStr
       <div className="dash-quicklinks">
         {!isAdmin && (
           <button type="button" className="btn ghost" onClick={() => onNavigate('register')}>
-            {isBusinessUnit || role === 'chiefdirector' ? 'View my risks' : 'Open full risk register'}
+            {role === 'director' || role === 'chiefdirector' ? 'View my risks' : 'Open full risk register'}
           </button>
         )}
         {!isAdmin && (

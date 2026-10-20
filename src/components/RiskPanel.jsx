@@ -2,14 +2,19 @@ import { useState } from 'react'
 import { scoreClass, formatDateShort, formatDateTime, actionPlanStatusLabel, actionPlanStatusTone } from '../utils/helpers.jsx'
 import { ROLES } from '../data/orgStructure.js'
 import { complianceActByName } from '../data/complianceUniverse.js'
-import { approverStageForRole, canEditRisk } from '../utils/permissions.js'
+import { approverStageForRole, canEditRisk, canRequestRemoval, canValidateRemoval, isReviewWindowOpen } from '../utils/permissions.js'
+import { daysInStage, isStageOverdue } from '../utils/sla.js'
+import { stageLabelForRisk } from '../utils/approvalChain.js'
 import TrendChart from './TrendChart.jsx'
 import DiffList from './DiffList.jsx'
 
-const ACTION_ICON = { created: '＋', edited: '✎', proposed: '⇢', 'changes-requested': '↩', approved: '✓', rejected: '✕' }
+const ACTION_ICON = {
+  created: '＋', edited: '✎', proposed: '⇢', 'changes-requested': '↩', approved: '✓', rejected: '✕',
+  'removal-requested': '🗑', removed: '🗑', 'removal-denied': '↩'
+}
 
 const STATUS_TONE = {
-  Draft: 'neutral', Submitted: 'info', 'Changes Required': 'warn', Rejected: 'bad', Approved: 'good'
+  Draft: 'neutral', Submitted: 'info', 'Changes Required': 'warn', Rejected: 'bad', Approved: 'good', Removed: 'bad'
 }
 
 const EDIT_LABEL = {
@@ -46,20 +51,28 @@ function HistoryItem({ entry }) {
   )
 }
 
-export default function RiskPanel({ risk, role, periodOpen, onClose, onOpenForm, onRequestUpdate, onReviewProposal, onAddComment, onOpenKri, onOpenAdHocRequest }) {
+export default function RiskPanel({
+  risk, role, periodOpen, stageSla, reviewWindow, orgStructure, chiefDirectorateOverrides,
+  onClose, onOpenForm, onRequestUpdate, onReviewProposal, onAddComment,
+  onOpenKri, onOpenAdHocRequest, onOpenRemovalRequest, onOpenRemovalValidation, onOpenReviewWindowEdit
+}) {
   const [commentText, setCommentText] = useState('')
   const [showAllHistory, setShowAllHistory] = useState(false)
 
   if (!risk) return null
   const myStage = approverStageForRole(role)
   const isMyStage = myStage && risk.approvalStage === myStage
-  const iCanEdit = canEditRisk(risk, role, { businessUnit: risk.businessUnit }, periodOpen)
+  const iCanEdit = canEditRisk(risk, role, periodOpen)
   const history = [...(risk.history || [])].reverse()
   const visibleHistory = showAllHistory ? history : history.slice(0, 3)
   const scoreHistory = risk.scoreHistory || []
   const everApproved = risk.approvalStatus === 'Approved' || (risk.history || []).some(h => h.action === 'approved')
   const openUpdateRequest = (risk.updateRequests || []).find(r => !r.fulfilled)
-  const isApprover = ['chiefdirector', 'ddg', 'hod'].includes(role)
+  const isApprover = ['director', 'chiefdirector', 'ddg', 'cro', 'hod'].includes(role)
+  const pendingRemoval = risk.removalRequest?.status === 'Pending'
+  const daysHere = daysInStage(risk)
+  const overdue = isStageOverdue(risk, stageSla)
+  const canEditDuringReviewWindow = role === 'riskcapturer' && risk.approvalStatus === 'Approved' && isReviewWindowOpen(reviewWindow)
 
   function submitComment(e) {
     e.preventDefault()
@@ -74,7 +87,7 @@ export default function RiskPanel({ risk, role, periodOpen, onClose, onOpenForm,
         <div className="panel-head">
           <div>
             <h3>{risk.risk}{risk.riskType === 'Compliance' && <span className="type-badge on-dark">Compliance</span>}</h3>
-            <div className="meta">{risk.businessUnit} · {risk.category} · Target date {risk.targetDate}</div>
+            <div className="meta">{risk.businessUnit} · {risk.category} · Target date {risk.revisedTargetDate || risk.targetDate}</div>
           </div>
           <button className="x" onClick={onClose} aria-label="Close">&times;</button>
         </div>
@@ -82,8 +95,11 @@ export default function RiskPanel({ risk, role, periodOpen, onClose, onOpenForm,
           <div className={'approval-banner tone-' + STATUS_TONE[risk.approvalStatus]}>
             <div>
               <strong>{risk.approvalStatus}</strong>
-              {risk.approvalStatus === 'Submitted' && ` — awaiting ${ROLES[risk.approvalStage]?.label} review`}
+              {risk.approvalStatus === 'Submitted' && ` — awaiting ${stageLabelForRisk(risk.approvalStage, risk, orgStructure, chiefDirectorateOverrides)} review`}
               {risk.pendingChange?.submittedAt && risk.approvalStatus === 'Submitted' && ` · submitted by ${risk.pendingChange.submittedBy} on ${formatDateShort(risk.pendingChange.submittedAt)}`}
+              {risk.approvalStatus === 'Submitted' && daysHere !== null && (
+                <span className={overdue ? ' sub tone-bad' : ' sub'}> · in this stage for {daysHere}d{overdue ? ` (SLA ${stageSla?.[risk.approvalStage]}d exceeded)` : ''}</span>
+              )}
             </div>
             {isMyStage && (
               <button type="button" className="btn sm" onClick={onReviewProposal}>Review submission</button>
@@ -94,8 +110,20 @@ export default function RiskPanel({ risk, role, periodOpen, onClose, onOpenForm,
             <div className="approval-banner tone-warn">
               <div>
                 <strong>Ad-hoc update requested</strong> by {openUpdateRequest.requestedBy} ({ROLES[openUpdateRequest.requestedByRole]?.label}) — {openUpdateRequest.reason}
-                {role === 'businessunit' && periodOpen === false && ' · this risk is editable until you act on it, even though the capture period is closed.'}
+                {role === 'riskcapturer' && periodOpen === false && ' · this risk is editable until you act on it, even though the capture period is closed.'}
               </div>
+            </div>
+          )}
+
+          {risk.removalRequest && (
+            <div className={'approval-banner tone-' + (risk.removalRequest.status === 'Pending' ? 'warn' : risk.removalRequest.status === 'Approved' ? 'bad' : 'neutral')}>
+              <div>
+                <strong>Removal {risk.removalRequest.status.toLowerCase()}</strong> — requested by {risk.removalRequest.requestedBy} ({ROLES[risk.removalRequest.requestedByRole]?.label}): {risk.removalRequest.reason}
+                {' '}<a className="link-btn" href={risk.removalRequest.memo.dataUrl} download={risk.removalRequest.memo.name}>📎 {risk.removalRequest.memo.name}</a>
+              </div>
+              {pendingRemoval && canValidateRemoval(role) && (
+                <button type="button" className="btn sm" onClick={onOpenRemovalValidation}>Validate</button>
+              )}
             </div>
           )}
 
@@ -180,7 +208,7 @@ export default function RiskPanel({ risk, role, periodOpen, onClose, onOpenForm,
                   {risk.kris?.length > 0 ? `${risk.kris.length} indicator${risk.kris.length > 1 ? 's' : ''} tracked` : 'No indicators recorded yet.'}
                 </div>
                 <button type="button" className="btn ghost sm" onClick={onOpenKri}>
-                  {role === 'businessunit' ? 'Update indicators' : 'View indicators'}
+                  {role === 'riskcapturer' ? 'Update indicators' : 'View indicators'}
                 </button>
               </div>
             </>
@@ -226,12 +254,18 @@ export default function RiskPanel({ risk, role, periodOpen, onClose, onOpenForm,
         </div>
         <div className="panel-foot">
           <button className="btn ghost" onClick={onClose}>Close</button>
+          {canEditDuringReviewWindow && (
+            <button className="btn ghost" onClick={onOpenReviewWindowEdit}>Update during review window</button>
+          )}
+          {canRequestRemoval(role) && !risk.removalRequest && risk.approvalStatus !== 'Removed' && (
+            <button className="btn ghost" onClick={onOpenRemovalRequest}>Request to remove risk</button>
+          )}
           {isApprover && (
-            <button className="btn ghost" onClick={onOpenAdHocRequest} title="Ask this business unit to update this risk now, even if the capture period is closed">
+            <button className="btn ghost" onClick={onOpenAdHocRequest} title="Ask the risk capturer to update this risk now, even if the capture period is closed">
               Request ad-hoc update
             </button>
           )}
-          {role === 'businessunit' && (
+          {role === 'riskcapturer' && (
             <>
               <button className="btn ghost" onClick={onRequestUpdate}>Request assessment update</button>
               <button

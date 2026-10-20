@@ -198,7 +198,7 @@ export default function ReportsView({ risks }) {
               {filtered.map(r => (
                 <div className="deadline-row" key={r.nr}>
                   <span className="r">{r.risk.length > 40 ? r.risk.slice(0, 38) + '…' : r.risk}</span>
-                  <span className="d">{r.targetDate}</span>
+                  <span className="d">{r.revisedTargetDate || r.targetDate}</span>
                 </div>
               ))}
             </div>

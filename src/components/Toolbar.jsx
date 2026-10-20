@@ -1,9 +1,9 @@
 import { chiefDirectoratesInBranch, businessUnitsInChiefDirectorate } from '../data/orgStructure.js'
 
-export default function Toolbar({ orgStructure, filters, setFilters, categories, lockLevel, canAddRisk, onAddRisk }) {
-  const branchLocked = lockLevel === 'chiefdirector' || lockLevel === 'businessunit'
-  const cdLocked = lockLevel === 'chiefdirector' || lockLevel === 'businessunit'
-  const buLocked = lockLevel === 'businessunit'
+export default function Toolbar({ orgStructure, filters, setFilters, categories, lockLevel, canAddRisk, onAddRisk, showRemoved, onToggleShowRemoved }) {
+  const branchLocked = lockLevel === 'chiefdirector' || lockLevel === 'director'
+  const cdLocked = lockLevel === 'chiefdirector' || lockLevel === 'director'
+  const buLocked = lockLevel === 'director'
 
   const branches = orgStructure.map(b => b.branch)
   const chiefDirectorates = filters.branch ? chiefDirectoratesInBranch(filters.branch, orgStructure) : orgStructure.flatMap(b => b.chiefDirectorates.map(cd => cd.name))
@@ -51,11 +51,17 @@ export default function Toolbar({ orgStructure, filters, setFilters, categories,
         value={filters.q}
         onChange={e => setFilters(f => ({ ...f, q: e.target.value }))}
       />
+      {onToggleShowRemoved && (
+        <label className="checkbox-row">
+          <input type="checkbox" checked={showRemoved} onChange={onToggleShowRemoved} />
+          Show removed
+        </label>
+      )}
       <div className="spacer" />
       <button
         className="btn"
         disabled={!canAddRisk}
-        title={canAddRisk ? undefined : 'Only a Business Unit can capture a new risk'}
+        title={canAddRisk ? undefined : 'Only a Risk Capturer can capture a new risk'}
         onClick={onAddRisk}
       >
         + Add risk

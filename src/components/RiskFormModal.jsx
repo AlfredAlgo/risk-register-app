@@ -4,8 +4,9 @@ import { allBusinessUnits, allChiefDirectorates } from '../data/orgStructure.js'
 import { COMPLIANCE_UNIVERSE, COMPLIANCE_CATEGORIES, complianceActByName } from '../data/complianceUniverse.js'
 import {
   emptyRisk, computeScore, scoreClass, LIKELIHOOD_LABELS, IMPACT_LABELS, RISK_TYPES,
-  ROOT_CAUSE_CATEGORIES, CONTROL_CATEGORIES, ACTION_PLAN_STATUSES, actionPlanStatusLabel
+  ROOT_CAUSE_CATEGORIES, CONTROL_CATEGORIES
 } from '../utils/helpers.jsx'
+import ActionPlanField from './ActionPlanField.jsx'
 
 function ListField({ label, items, onChange, placeholder }) {
   function setItem(i, value) {
@@ -73,47 +74,6 @@ function CategoryListField({ label, items, categories, onChange, placeholder, em
   )
 }
 
-function ActionPlanField({ items, onChange }) {
-  function setItem(i, patch) {
-    const next = items.map((a, idx) => (idx === i ? { ...a, ...patch } : a))
-    onChange(next)
-  }
-  function addItem() {
-    onChange([...items, { plan: '', progress: '', target: '', status: 'inprogress' }])
-  }
-  function removeItem(i) {
-    onChange(items.filter((_, idx) => idx !== i))
-  }
-  return (
-    <div className="form-field">
-      <label>Action plan &amp; progress</label>
-      {items.map((a, i) => (
-        <div className="ap-form-item" key={i}>
-          <input
-            type="text" placeholder="Action / plan"
-            value={a.plan} onChange={e => setItem(i, { plan: e.target.value })}
-          />
-          <input
-            type="text" placeholder="Progress to date"
-            value={a.progress} onChange={e => setItem(i, { progress: e.target.value })}
-          />
-          <div className="ap-form-row">
-            <input
-              type="text" placeholder="Target date"
-              value={a.target} onChange={e => setItem(i, { target: e.target.value })}
-            />
-            <select value={a.status} onChange={e => setItem(i, { status: e.target.value })}>
-              {ACTION_PLAN_STATUSES.map(s => <option key={s} value={s}>{actionPlanStatusLabel[s]}</option>)}
-            </select>
-            <button type="button" className="btn ghost sm" onClick={() => removeItem(i)} disabled={items.length <= 1}>Remove</button>
-          </div>
-        </div>
-      ))}
-      <button type="button" className="btn ghost sm" onClick={addItem}>+ Add action</button>
-    </div>
-  )
-}
-
 const TITLES = { new: 'Add risk', edit: 'Edit risk' }
 
 function ScorePicker({ title, likelihood, impact, onLikelihood, onImpact }) {
@@ -143,7 +103,10 @@ function ScorePicker({ title, likelihood, impact, onLikelihood, onImpact }) {
 }
 
 export default function RiskFormModal({ mode, risk, defaultBusinessUnit, orgStructure, onCancel, onSaveDraft, onSubmit }) {
-  const [form, setForm] = useState(() => risk ? { ...risk } : emptyRisk({ businessUnit: defaultBusinessUnit }))
+  // Merge over emptyRisk() rather than trusting `risk` outright - older seed/
+  // persisted risks captured before a field existed (e.g. revisedTargetDate)
+  // would otherwise leave that input uncontrolled until first keystroke.
+  const [form, setForm] = useState(() => risk ? { ...emptyRisk(), ...risk } : emptyRisk({ businessUnit: defaultBusinessUnit }))
   const [dateChangeReason, setDateChangeReason] = useState('')
   const [dateChangeAttachment, setDateChangeAttachment] = useState(null)
   const [attachError, setAttachError] = useState('')
@@ -161,11 +124,14 @@ export default function RiskFormModal({ mode, risk, defaultBusinessUnit, orgStru
 
   // A target-date change (the risk's own, or any action-plan item's) needs a
   // written reason on record - compare against the values the form opened
-  // with, not against every keystroke.
+  // with, not against every keystroke. Once a risk has been approved once,
+  // its original target date is locked (see the Target date field below) -
+  // the revised date is the one that can actually change from here on.
   const originalTargetDate = mode === 'edit' ? (risk?.targetDate ?? '') : null
+  const originalRevisedTargetDate = mode === 'edit' ? (risk?.revisedTargetDate ?? '') : null
   const originalActionTargets = mode === 'edit' ? (risk?.actionPlan || []).map(a => a.target) : null
   const datesChanged = mode === 'edit' && (
-    form.targetDate !== originalTargetDate ||
+    (everApproved ? form.revisedTargetDate !== originalRevisedTargetDate : form.targetDate !== originalTargetDate) ||
     JSON.stringify(form.actionPlan.map(a => a.target)) !== JSON.stringify(originalActionTargets)
   )
 
@@ -292,8 +258,7 @@ export default function RiskFormModal({ mode, risk, defaultBusinessUnit, orgStru
             <div className="form-field">
               <label>Business unit</label>
               <select
-                value={form.businessUnit} disabled
-                title="Risks stay within your own business unit"
+                value={form.businessUnit}
                 onChange={e => set({ businessUnit: e.target.value })}
               >
                 <option value="">Select…</option>
@@ -302,10 +267,14 @@ export default function RiskFormModal({ mode, risk, defaultBusinessUnit, orgStru
             </div>
             <div className="form-field">
               <label>Category</label>
-              <select value={form.category} onChange={e => set({ category: e.target.value })}>
-                <option value="">Select…</option>
-                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <input
+                type="text" list="category-options" value={form.category}
+                onChange={e => set({ category: e.target.value })}
+                placeholder="e.g. Projects, ICT infrastructure…"
+              />
+              <datalist id="category-options">
+                {CATEGORIES.map(c => <option key={c} value={c} />)}
+              </datalist>
             </div>
           </div>
 
@@ -446,9 +415,24 @@ export default function RiskFormModal({ mode, risk, defaultBusinessUnit, orgStru
             </div>
             <div className="form-field">
               <label>Target date</label>
-              <input type="text" value={form.targetDate} onChange={e => set({ targetDate: e.target.value })} placeholder="e.g. 31 Mar 2027" />
+              <input
+                type="text" value={form.targetDate} disabled={everApproved}
+                onChange={e => set({ targetDate: e.target.value })} placeholder="e.g. 31 Mar 2027"
+              />
+              {everApproved && <div className="field-caption">Locked once approved — see Revised target date below.</div>}
             </div>
           </div>
+
+          {everApproved && (
+            <div className="form-field">
+              <label>Revised target date</label>
+              <input
+                type="text" value={form.revisedTargetDate}
+                onChange={e => set({ revisedTargetDate: e.target.value })}
+                placeholder="e.g. 30 Jun 2027"
+              />
+            </div>
+          )}
 
           <div className="form-field">
             <label>Assessment date (drives FY / month in reports)</label>

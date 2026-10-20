@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import { ROLES, allBusinessUnits, chiefDirectoratesInBranch } from '../data/orgStructure.js'
+import { ROLES, allBusinessUnits, chiefDirectoratesInBranch, allChiefDirectorates } from '../data/orgStructure.js'
+
+const STAGE_ROLES = Object.entries(ROLES).filter(([, r]) => r.stage).map(([key]) => key)
 
 function renameBranch(structure, index, name) {
   return structure.map((b, i) => (i === index ? { ...b, branch: name } : b))
@@ -54,7 +56,40 @@ function AddInline({ placeholder, onAdd }) {
   )
 }
 
-export default function AdminView({ orgStructure, onChangeOrgStructure, personas, onChangePersonas }) {
+// An ordered list of approval-chain stages, each a select over the
+// stage-bearing roles - an empty list means "use the standard type-based
+// chain" for that business unit.
+function StageChainField({ value, onChange }) {
+  function setStage(i, stage) {
+    onChange(value.map((s, idx) => (idx === i ? stage : s)))
+  }
+  function addStage() {
+    onChange([...value, STAGE_ROLES[0]])
+  }
+  function removeStage(i) {
+    onChange(value.filter((_, idx) => idx !== i))
+  }
+  return (
+    <div>
+      {value.map((stage, i) => (
+        <div className="list-row" key={i}>
+          <select value={stage} onChange={e => setStage(i, e.target.value)}>
+            {STAGE_ROLES.map(k => <option key={k} value={k}>{ROLES[k].label}</option>)}
+          </select>
+          <button type="button" className="btn ghost sm" onClick={() => removeStage(i)}>Remove</button>
+        </div>
+      ))}
+      <button type="button" className="btn ghost sm" onClick={addStage}>+ Add stage</button>
+    </div>
+  )
+}
+
+export default function AdminView({
+  orgStructure, onChangeOrgStructure, personas, onChangePersonas,
+  chiefDirectorateOverrides, onChangeCdOverrides,
+  businessUnitChainOverrides, onChangeBuChainOverrides,
+  stageSla, onChangeStageSla
+}) {
   return (
     <div className="view-enter">
       <div className="block-title" style={{ marginTop: 0 }}>Organisational structure</div>
@@ -82,6 +117,27 @@ export default function AdminView({ orgStructure, onChangeOrgStructure, personas
                   />
                   <button type="button" className="btn ghost sm" onClick={() => onChangeOrgStructure(removeChiefDirectorate(orgStructure, bi, ci))}>Remove</button>
                 </div>
+                <div className="cd-override-row">
+                  <input
+                    type="text"
+                    value={chiefDirectorateOverrides[cd.name]?.ddgLabel || ''}
+                    placeholder="DDG label override (e.g. CFO)"
+                    onChange={e => onChangeCdOverrides({
+                      ...chiefDirectorateOverrides,
+                      [cd.name]: { ...chiefDirectorateOverrides[cd.name], ddgLabel: e.target.value || null }
+                    })}
+                  />
+                  <select
+                    value={chiefDirectorateOverrides[cd.name]?.endsAt || ''}
+                    onChange={e => onChangeCdOverrides({
+                      ...chiefDirectorateOverrides,
+                      [cd.name]: { ...chiefDirectorateOverrides[cd.name], endsAt: e.target.value || null }
+                    })}
+                  >
+                    <option value="">Chain ends at: full chain</option>
+                    <option value="chiefdirector">Chain ends at: Chief Director</option>
+                  </select>
+                </div>
                 <div className="org-bu-list">
                   {cd.businessUnits.map((bu, ui) => (
                     <div className="list-row" key={ui}>
@@ -102,9 +158,45 @@ export default function AdminView({ orgStructure, onChangeOrgStructure, personas
       ))}
       <AddInline placeholder="New branch" onAdd={name => onChangeOrgStructure(addBranch(orgStructure, name))} />
 
+      <div className="block-title">Business unit chain overrides</div>
+      <p className="sub" style={{ marginBottom: 14 }}>
+        Leave empty to use the standard type-based chain. Set an explicit sequence for a unit whose routing doesn't follow the default (e.g. the CRO office's own submissions) once that's confirmed.
+      </p>
+      {allBusinessUnits(orgStructure).map(bu => (
+        <div className="bu-chain-row" key={bu}>
+          <div className="who">{bu}</div>
+          <StageChainField
+            value={businessUnitChainOverrides[bu] || []}
+            onChange={chain => onChangeBuChainOverrides({ ...businessUnitChainOverrides, [bu]: chain })}
+          />
+        </div>
+      ))}
+
+      <div className="block-title">Approval stage SLAs</div>
+      <p className="sub" style={{ marginBottom: 14 }}>
+        Turnaround time in days per stage. Left blank until the risk team provides real numbers — nothing is flagged overdue without one set.
+      </p>
+      <table className="ref">
+        <thead><tr><th>Stage</th><th>SLA (days)</th></tr></thead>
+        <tbody>
+          {STAGE_ROLES.map(key => (
+            <tr key={key}>
+              <td className="who">{ROLES[key].label}</td>
+              <td>
+                <input
+                  type="number" min={1} value={stageSla[key] ?? ''}
+                  placeholder="No SLA set"
+                  onChange={e => onChangeStageSla({ ...stageSla, [key]: e.target.value ? Number(e.target.value) : null })}
+                />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
       <div className="block-title">Demo personas</div>
       <p className="sub" style={{ marginBottom: 14 }}>
-        There's no real login in this prototype — each role is played by one named person. Rename them, or reassign the Business Unit / Chief Director persona to a different part of the org.
+        There's no real login in this prototype — each role is played by one named person. Rename them, or reassign the Director / Chief Director persona to a different part of the org.
       </p>
       <table className="ref">
         <thead><tr><th>Role</th><th>Name</th><th>Scope</th></tr></thead>
@@ -119,7 +211,7 @@ export default function AdminView({ orgStructure, onChangeOrgStructure, personas
                 />
               </td>
               <td>
-                {key === 'businessunit' && (
+                {key === 'director' && (
                   <select
                     value={personas[key].businessUnit}
                     onChange={e => onChangePersonas({ ...personas, [key]: { ...personas[key], businessUnit: e.target.value } })}
@@ -132,10 +224,11 @@ export default function AdminView({ orgStructure, onChangeOrgStructure, personas
                     value={personas[key].chiefDirectorate}
                     onChange={e => onChangePersonas({ ...personas, [key]: { ...personas[key], chiefDirectorate: e.target.value } })}
                   >
-                    {orgStructure.flatMap(b => chiefDirectoratesInBranch(b.branch, orgStructure)).map(cd => <option key={cd} value={cd}>{cd}</option>)}
+                    {allChiefDirectorates(orgStructure).map(cd => <option key={cd} value={cd}>{cd}</option>)}
                   </select>
                 )}
-                {(key === 'ddg' || key === 'hod' || key === 'administrator') && <span className="sub">EGOV-wide</span>}
+                {(key === 'ddg' || key === 'cro' || key === 'hod' || key === 'administrator') && <span className="sub">EGOV-wide</span>}
+                {key === 'riskcapturer' && <span className="sub">EGOV-wide — captures on behalf of any business unit</span>}
               </td>
             </tr>
           ))}

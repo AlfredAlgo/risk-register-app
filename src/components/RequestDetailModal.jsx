@@ -4,7 +4,7 @@ import { formatOwnership } from '../utils/helpers.jsx'
 
 export default function RequestDetailModal({ card, role, linkedRisk, onClose, onAdvanceStage, onSaveNotes, onViewRisk }) {
   const [mgmtNotes, setMgmtNotes] = useState(card.mgmtNotes || '')
-  const isRiskMgmt = role !== 'businessunit'
+  const isRiskMgmt = role !== 'riskcapturer'
   const stageIndex = BOARD_STAGES.indexOf(card.stage)
   const notesDirty = mgmtNotes !== (card.mgmtNotes || '')
 

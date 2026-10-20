@@ -214,7 +214,7 @@ export async function exportReportPdf({ risks, filterLabel, summary, byBU, bySta
         r.response,
         statusLabel[r.status] || r.status,
         `${r.progressPct}%`,
-        r.targetDate,
+        r.revisedTargetDate || r.targetDate,
         r.ownership?.accountableUnit || ""
       ]),
       theme: "grid",

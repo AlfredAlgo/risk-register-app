@@ -75,32 +75,37 @@ export function businessUnitsInChiefDirectorate(chiefDirectorateName, structure 
   return allBusinessUnits(structure)
 }
 
-// The five roles from the SCM Procurement Plan manual, mapped onto the risk
-// register per the client's change spec. `stage` is this role's key in
-// APPROVAL_CHAIN, or null for roles that don't approve (capture / admin).
+// Business units don't get system access (licensing) - a Risk Capturer in
+// the CRO office captures on their behalf, so it has no fixed org scope of
+// its own (it picks a business unit per risk, see RiskFormModal). Director
+// sits at the start of the approval chain (owns the action plans, must see
+// what's agreed); CRO sits near the end (recommends on Strategic risks,
+// acknowledges and is terminal on every other type) - it is a fresh role,
+// not a revival of the "cro" key this app used before the five-role rebuild
+// (that one was renamed to "hod" and still means something different).
+// `stage` is this role's key in the per-risk approval chain (see
+// utils/approvalChain.js), or null for roles that don't approve.
 export const ROLES = {
-  businessunit: { label: "Business Unit", stage: null },
+  riskcapturer: { label: "Risk Capturer", stage: null },
+  director: { label: "Director", stage: "director" },
   chiefdirector: { label: "Chief Director", stage: "chiefdirector" },
   ddg: { label: "DDG", stage: "ddg" },
+  cro: { label: "CRO", stage: "cro" },
   hod: { label: "HOD", stage: "hod" },
   administrator: { label: "Administrator", stage: null }
 }
 
-// Stage order a submission moves through after a Business Unit submits it.
-// An ordered list (not hardcoded per-stage branches elsewhere) so inserting a
-// compliance-review stage later, if the client asks for one, is one line here
-// plus a persona - not a rewrite of the approval logic.
-export const APPROVAL_CHAIN = ["chiefdirector", "ddg", "hod"]
-
 // One named demo persona per role. Distinct names (not one shared identity
 // relabeled) so a demo doesn't show one person approving their own
-// submission as they switch roles. Business Unit and Chief Director sit in
-// the real Resource Management chief directorate so the main demo thread
-// (capture -> Chief Director -> DDG -> HOD) walks through real EGOV names.
+// submission as they switch roles. Director and Chief Director sit in the
+// real Resource Management chief directorate so the main demo thread walks
+// through real EGOV names.
 export const ROLE_PERSONAS = {
-  businessunit: { name: "Freddy Mahlangu", businessUnit: "Human Resource" },
+  riskcapturer: { name: "Freddy Mahlangu" },
+  director: { name: "Lindiwe Ngwenya", businessUnit: "Human Resource" },
   chiefdirector: { name: "Nomvula Khumalo", chiefDirectorate: "Resource Management" },
   ddg: { name: "Sipho Radebe" },
+  cro: { name: "Palesa Mokoena" },
   hod: { name: "Zanele Dube" },
   administrator: { name: "Thabo Sithole" }
 }

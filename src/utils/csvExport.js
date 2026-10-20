@@ -19,7 +19,7 @@ export function exportReportCsv({ risks, filterLabel }) {
   const rows = risks.map(r => [
     r.nr, r.riskType, r.outcome, r.businessUnit, r.category, r.risk,
     r.ir, r.rr, r.response, statusLabel[r.status] || r.status, r.approvalStatus,
-    r.progressPct, r.targetDate,
+    r.progressPct, r.revisedTargetDate || r.targetDate,
     r.ownership?.accountableUnit, (r.ownership?.responsiblePersons || []).filter(Boolean).join("; "),
     r.assessmentDate
   ])

@@ -2,17 +2,18 @@ import { useState } from 'react'
 import DiffList from './DiffList.jsx'
 import { diffRisk } from '../utils/audit.js'
 import { formatDateTime, actionPlanStatusLabel } from '../utils/helpers.jsx'
-import { ROLES, APPROVAL_CHAIN } from '../data/orgStructure.js'
 
-const STAGE_TRACK = ['Draft', ...APPROVAL_CHAIN.map(k => ROLES[k].label), 'Approved']
-
-export default function ProposalReviewModal({ risk, canAct, onClose, onAuthorise, onRequestChanges, onReject }) {
+// `chain`/`stageLabels` are this risk's own resolved sequence (type- and
+// org-dependent, see utils/approvalChain.js) - precomputed once by App.jsx
+// rather than read from a single global chain.
+export default function ProposalReviewModal({ risk, chain, stageLabels, canAct, onClose, onAuthorise, onRequestChanges, onReject }) {
   const [action, setAction] = useState(null) // null | 'changes' | 'reject'
   const [note, setNote] = useState('')
   const [authoriseNote, setAuthoriseNote] = useState('')
   const submission = risk.pendingChange.data
   const diffs = diffRisk(risk, submission)
-  const currentStageIndex = 1 + APPROVAL_CHAIN.indexOf(risk.approvalStage)
+  const stageTrack = ['Draft', ...stageLabels, 'Approved']
+  const currentStageIndex = 1 + chain.indexOf(risk.approvalStage)
 
   function submitNote(handler) {
     if (!note.trim()) return
@@ -31,7 +32,7 @@ export default function ProposalReviewModal({ risk, canAct, onClose, onAuthorise
         </div>
         <div className="panel-body">
           <div className="stage-track">
-            {STAGE_TRACK.map((label, i) => (
+            {stageTrack.map((label, i) => (
               <div key={label} className={'stage-pip' + (i === currentStageIndex ? ' current' : i < currentStageIndex ? ' done' : '')}>
                 {label}
               </div>

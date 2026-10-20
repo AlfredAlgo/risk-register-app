@@ -7,11 +7,12 @@ import { scopeRisksForRole, canCreateRisk } from '../utils/permissions.js'
 const EMPTY_FILTERS = { branch: '', chiefDirectorate: '', businessUnit: '', cat: '', status: '', q: '' }
 
 export default function RegisterView({ risks, role, persona, orgStructure, periodOpen, onSelectRisk, onAddRisk }) {
-  const lockLevel = role === 'businessunit' ? 'businessunit' : role === 'chiefdirector' ? 'chiefdirector' : null
+  const lockLevel = role === 'director' ? 'director' : role === 'chiefdirector' ? 'chiefdirector' : null
   const [filters, setFilters] = useState(EMPTY_FILTERS)
+  const [showRemoved, setShowRemoved] = useState(false)
 
   useEffect(() => {
-    if (role === 'businessunit') {
+    if (role === 'director') {
       const path = findOrgPath(persona.businessUnit, orgStructure)
       setFilters(f => ({ ...f, branch: path.branch || '', chiefDirectorate: path.chiefDirectorate || '', businessUnit: persona.businessUnit }))
     } else if (role === 'chiefdirector') {
@@ -29,6 +30,7 @@ export default function RegisterView({ risks, role, persona, orgStructure, perio
   const filtered = useMemo(() => scopedRisks.filter(r => {
     const path = findOrgPath(r.businessUnit, orgStructure)
     return (
+      (showRemoved || r.approvalStatus !== 'Removed') &&
       (!filters.branch || path.branch === filters.branch) &&
       (!filters.chiefDirectorate || path.chiefDirectorate === filters.chiefDirectorate) &&
       (!filters.businessUnit || r.businessUnit === filters.businessUnit) &&
@@ -38,7 +40,7 @@ export default function RegisterView({ risks, role, persona, orgStructure, perio
         r.risk.toLowerCase().includes(filters.q.toLowerCase()) ||
         r.businessUnit.toLowerCase().includes(filters.q.toLowerCase()))
     )
-  }), [scopedRisks, filters, orgStructure])
+  }), [scopedRisks, filters, orgStructure, showRemoved])
 
   const outcomes = useMemo(() => [...new Set(filtered.map(r => r.outcome))], [filtered])
 
@@ -52,6 +54,8 @@ export default function RegisterView({ risks, role, persona, orgStructure, perio
         lockLevel={lockLevel}
         canAddRisk={canCreateRisk(role, periodOpen)}
         onAddRisk={onAddRisk}
+        showRemoved={showRemoved}
+        onToggleShowRemoved={role === 'riskcapturer' || role === 'administrator' ? () => setShowRemoved(s => !s) : undefined}
       />
       {outcomes.length === 0 ? (
         <div className="outcome">

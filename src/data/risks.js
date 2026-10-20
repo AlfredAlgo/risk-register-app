@@ -394,7 +394,7 @@ export const RISKS = [
     ownership: { accountableUnit: "Resource Management", responsiblePersons: ["Chief Director: Resource Management"] },
     targetDate: "As and when non-compliance is identified", status: "amber", progressPct: 60,
     assessmentDate: "2026-08-20",
-    approvalStatus: "Submitted", approvalStage: "chiefdirector",
+    approvalStatus: "Submitted", approvalStage: "director",
     history: [
       { id: "h7-1", timestamp: "2025-10-01T09:00:00.000Z", actor: "Freddy Mahlangu", actorRole: "businessunit", action: "created", summary: "Compliance risk captured from the 2025/26 Compliance Risk Management Plan." },
       { id: "h7-2", timestamp: "2026-04-10T09:00:00.000Z", actor: "HOD", actorRole: "hod", action: "approved", summary: "Authorised — Q3 progress reviewed and approved." },
@@ -793,6 +793,69 @@ export const RISKS = [
         ]
       }
     ]
+  },
+  {
+    riskType: "Strategic",
+    outcome: "Modernised provincial ICT infrastructure and connectivity",
+    nr: 16, businessUnit: OPS_BU2, category: "Strategic planning",
+    risk: "Delayed rollout of the departmental digital transformation strategy",
+    rootCauses: [
+      { category: "Process", text: "Strategy milestones not yet translated into funded project plans" },
+      { category: "External", text: "Dependent on provincial treasury approval for multi-year funding" }
+    ],
+    controls: [
+      { category: "Directive", text: "Digital transformation strategy, approved by EXCO" },
+      { category: "Preventive", text: "Quarterly strategy steering committee" }
+    ],
+    consequences: ["Slippage against the department's five-year digital transformation targets; reputational exposure with the provincial executive."],
+    irLikelihood: 4, irImpact: 5, rrLikelihood: 3, rrImpact: 4,
+    ir: 20, rr: 12, response: "Mitigate",
+    actionPlan: [
+      { plan: "Convert approved strategy milestones into funded, scheduled project plans.", progress: "Steering committee has prioritised the first three milestones; business cases in preparation for treasury submission.", target: "30 Jun 2027", status: "inprogress" }
+    ],
+    act: "", provisionReference: "",
+    ownership: { accountableUnit: OPS_BU2, responsiblePersons: ["Chief Director: Infrastructure — Mr M. Ludwig"] },
+    targetDate: "30 Jun 2027", status: "amber", progressPct: 0,
+    assessmentDate: "2026-09-01",
+    approvalStatus: "Submitted", approvalStage: "ddg", approvalStageEnteredAt: "2026-09-08T09:00:00.000Z",
+    history: [
+      { id: "h16-1", timestamp: "2026-09-01T09:00:00.000Z", actor: "Freddy Mahlangu", actorRole: "riskcapturer", action: "created", summary: "Risk captured as draft." },
+      { id: "h16-2", timestamp: "2026-09-02T09:00:00.000Z", actor: "Freddy Mahlangu", actorRole: "riskcapturer", action: "proposed", summary: "Submitted for approval." },
+      { id: "h16-3", timestamp: "2026-09-04T10:00:00.000Z", actor: "Director", actorRole: "director", action: "approved", summary: "Authorised — moved to Chief Director to authorise." },
+      { id: "h16-4", timestamp: "2026-09-08T09:00:00.000Z", actor: "Chief Director", actorRole: "chiefdirector", action: "approved", summary: "Authorised — moved to DDG to authorise." }
+    ],
+    scoreHistory: [{ date: "2026-09-01", ir: 20, rr: 12 }],
+    comments: [],
+    pendingChange: {
+      submittedBy: "Freddy Mahlangu", submittedByRole: "riskcapturer", submittedAt: "2026-09-02T09:00:00.000Z",
+      data: {
+        riskType: "Strategic",
+        outcome: "Modernised provincial ICT infrastructure and connectivity",
+        businessUnit: OPS_BU2, category: "Strategic planning",
+        risk: "Delayed rollout of the departmental digital transformation strategy",
+        rootCauses: [
+          { category: "Process", text: "Strategy milestones not yet translated into funded project plans" },
+          { category: "External", text: "Dependent on provincial treasury approval for multi-year funding" }
+        ],
+        controls: [
+          { category: "Directive", text: "Digital transformation strategy, approved by EXCO" },
+          { category: "Preventive", text: "Quarterly strategy steering committee" }
+        ],
+        consequences: ["Slippage against the department's five-year digital transformation targets; reputational exposure with the provincial executive."],
+        irLikelihood: 4, irImpact: 5, rrLikelihood: 3, rrImpact: 4, ir: 20, rr: 12, response: "Mitigate",
+        actionPlan: [
+          { plan: "Convert approved strategy milestones into funded, scheduled project plans.", progress: "Steering committee has prioritised the first three milestones; business cases in preparation for treasury submission.", target: "30 Jun 2027", status: "inprogress" }
+        ],
+        act: "", provisionReference: "",
+        ownership: { accountableUnit: OPS_BU2, responsiblePersons: ["Chief Director: Infrastructure — Mr M. Ludwig"] },
+        targetDate: "30 Jun 2027", revisedTargetDate: "", status: "amber", progressPct: 0, assessmentDate: "2026-09-01"
+      }
+    },
+    removalRequest: null,
+    kriToleranceStatement: "",
+    kriSummary: "",
+    kris: [],
+    updateRequests: []
   }
 ]
 
