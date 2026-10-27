@@ -28,11 +28,13 @@ jobs:
           npm ci
           npm run build
 
-      # vite preview (the app's "start" script) needs the full node_modules
-      # tree at runtime, not just the dist/ output - package the whole app,
-      # same as the working Railway deployment.
+      # server.js has zero external dependencies - it only serves the
+      # already-built dist/ folder - so node_modules isn't needed at
+      # runtime at all. Shipping just these three avoids relying on a
+      # node_modules tree (with its node_modules/.bin symlinks) surviving
+      # a zip/unzip round trip intact.
       - name: Zip artifact for deployment
-        run: zip -r release.zip . -x '.git/*'
+        run: zip -r release.zip dist server.js package.json
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
