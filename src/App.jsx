@@ -272,21 +272,56 @@ export default function App() {
     setProposalReviewNr(null)
   }
 
+  // Everyone who already authorised this risk earlier in the current
+  // submission cycle (since it was last proposed) - so when a later stage
+  // sends it back, the earlier stages are told, even though only the
+  // capturer actually reworks it.
+  function involvedApproverRoles(risk) {
+    const history = risk.history || []
+    const lastProposedIdx = history.map(h => h.action).lastIndexOf('proposed')
+    const sinceProposed = lastProposedIdx === -1 ? history : history.slice(lastProposedIdx)
+    return [...new Set(sinceProposed.filter(h => h.action === 'approved').map(h => h.actorRole))]
+  }
+
   function requestChanges(nr, comment) {
-    setRisks(rs => rs.map(r => r.nr === nr ? {
-      ...r,
+    const r = risks.find(x => x.nr === nr)
+    const notifyRoles = r ? involvedApproverRoles(r).filter(ro => ro !== role) : []
+    setRisks(rs => rs.map(x => x.nr === nr ? {
+      ...x,
       approvalStatus: 'Changes Required', approvalStage: null, approvalStageEnteredAt: null,
-      history: [...r.history, historyEntry({ action: 'changes-requested', summary: `Requested changes: ${comment}` })]
-    } : r))
+      history: [...x.history, historyEntry({ action: 'changes-requested', summary: `Requested changes: ${comment}` })]
+    } : x))
+    if (r && notifyRoles.length) {
+      setNotifications(ns => [
+        ...ns,
+        ...notifyRoles.map(toRole => ({
+          id: uid(), toRole, riskNr: nr,
+          message: `${ROLES[role]?.label} requested changes on "${r.risk}" — it's gone back to the risk capturer for rework.`,
+          timestamp: nowIso()
+        }))
+      ])
+    }
     setProposalReviewNr(null)
   }
 
   function rejectSubmission(nr, reason) {
-    setRisks(rs => rs.map(r => r.nr === nr ? {
-      ...r,
+    const r = risks.find(x => x.nr === nr)
+    const notifyRoles = r ? involvedApproverRoles(r).filter(ro => ro !== role) : []
+    setRisks(rs => rs.map(x => x.nr === nr ? {
+      ...x,
       approvalStatus: 'Rejected', approvalStage: null, approvalStageEnteredAt: null,
-      history: [...r.history, historyEntry({ action: 'rejected', summary: `Rejected: ${reason}` })]
-    } : r))
+      history: [...x.history, historyEntry({ action: 'rejected', summary: `Rejected: ${reason}` })]
+    } : x))
+    if (r && notifyRoles.length) {
+      setNotifications(ns => [
+        ...ns,
+        ...notifyRoles.map(toRole => ({
+          id: uid(), toRole, riskNr: nr,
+          message: `${ROLES[role]?.label} rejected "${r.risk}".`,
+          timestamp: nowIso()
+        }))
+      ])
+    }
     setProposalReviewNr(null)
   }
 
@@ -322,11 +357,14 @@ export default function App() {
     setBoardCards(cards => cards.map(c => (c.id === id ? { ...c, mgmtNotes } : c)))
   }
 
-  function extendPeriod(reason) {
+  // Requires the HOD-approved memo/letter as an attachment - that approval
+  // happens outside the system, this is just the evidence of it, and the
+  // request can't be logged without it.
+  function extendPeriod(reason, memo) {
     setPeriod(p => ({
       ...p,
       open: true,
-      history: [...(p.history || []), { id: uid(), actor: persona.name, role, reason, timestamp: nowIso() }]
+      history: [...(p.history || []), { id: uid(), actor: persona.name, role, reason, attachment: memo, timestamp: nowIso() }]
     }))
   }
 
@@ -389,10 +427,16 @@ export default function App() {
     setRemovalValidationNr(null)
   }
 
-  function openReviewWindow(durationDays, reason, fieldWhitelist) {
-    const closesAt = new Date(Date.now() + durationDays * 86400000).toISOString()
-    setReviewWindow({ id: uid(), openedBy: persona.name, openedByRole: role, openedAt: nowIso(), closesAt, reason, fieldWhitelist })
+  // Scheduled like a meeting (explicit start/end dates) rather than a
+  // duration counted from today, so CRO can set one up ahead of time.
+  function openReviewWindow(opensAt, closesAt, reason, fieldWhitelist) {
+    setReviewWindow({ id: uid(), openedBy: persona.name, openedByRole: role, openedAt: nowIso(), opensAt, closesAt, reason, fieldWhitelist })
     setReviewWindowModalOpen(false)
+    setNotifications(ns => [
+      ...ns,
+      { id: uid(), toRole: 'director', riskNr: null, message: `A review window is open from ${opensAt} to ${closesAt}: ${reason}`, timestamp: nowIso() },
+      { id: uid(), toRole: 'chiefdirector', riskNr: null, message: `A review window is open from ${opensAt} to ${closesAt}: ${reason}`, timestamp: nowIso() }
+    ])
   }
 
   function closeReviewWindowNow() {
@@ -569,7 +613,7 @@ export default function App() {
 
       {reviewWindowModalOpen && (
         <ReviewWindowModal
-          reviewWindow={isReviewWindowOpen(reviewWindow) ? reviewWindow : null}
+          reviewWindow={reviewWindow}
           onCancel={() => setReviewWindowModalOpen(false)}
           onOpen={openReviewWindow}
           onCloseWindow={closeReviewWindowNow}

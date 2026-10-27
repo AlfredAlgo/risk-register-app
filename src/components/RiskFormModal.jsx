@@ -7,6 +7,7 @@ import {
   ROOT_CAUSE_CATEGORIES, CONTROL_CATEGORIES
 } from '../utils/helpers.jsx'
 import ActionPlanField from './ActionPlanField.jsx'
+import CategoryListField from './CategoryListField.jsx'
 
 function ListField({ label, items, onChange, placeholder }) {
   function setItem(i, value) {
@@ -30,41 +31,6 @@ function ListField({ label, items, onChange, placeholder }) {
             value={v}
             placeholder={placeholder}
             onChange={e => setItem(i, e.target.value)}
-          />
-          <button type="button" className="btn ghost sm" onClick={() => removeItem(i)} disabled={items.length <= 1}>Remove</button>
-        </div>
-      ))}
-      <button type="button" className="btn ghost sm" onClick={addItem}>+ Add</button>
-    </div>
-  )
-}
-
-// Root causes and controls both carry a classification alongside the text -
-// source (people/process/systems/external) for causes, control type
-// (preventive/detective/corrective/directive) for controls.
-function CategoryListField({ label, items, categories, onChange, placeholder, emptyItem }) {
-  function setItem(i, patch) {
-    onChange(items.map((it, idx) => (idx === i ? { ...it, ...patch } : it)))
-  }
-  function addItem() {
-    onChange([...items, emptyItem()])
-  }
-  function removeItem(i) {
-    onChange(items.filter((_, idx) => idx !== i))
-  }
-  return (
-    <div className="form-field">
-      <label>{label}</label>
-      {items.map((it, i) => (
-        <div className="list-row cat-row" key={i}>
-          <select value={it.category} onChange={e => setItem(i, { category: e.target.value })}>
-            {categories.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <input
-            type="text"
-            value={it.text}
-            placeholder={placeholder}
-            onChange={e => setItem(i, { text: e.target.value })}
           />
           <button type="button" className="btn ghost sm" onClick={() => removeItem(i)} disabled={items.length <= 1}>Remove</button>
         </div>
@@ -416,8 +382,8 @@ export default function RiskFormModal({ mode, risk, defaultBusinessUnit, orgStru
             <div className="form-field">
               <label>Target date</label>
               <input
-                type="text" value={form.targetDate} disabled={everApproved}
-                onChange={e => set({ targetDate: e.target.value })} placeholder="e.g. 31 Mar 2027"
+                type="date" value={form.targetDate} disabled={everApproved}
+                onChange={e => set({ targetDate: e.target.value })}
               />
               {everApproved && <div className="field-caption">Locked once approved — see Revised target date below.</div>}
             </div>
@@ -427,9 +393,8 @@ export default function RiskFormModal({ mode, risk, defaultBusinessUnit, orgStru
             <div className="form-field">
               <label>Revised target date</label>
               <input
-                type="text" value={form.revisedTargetDate}
+                type="date" value={form.revisedTargetDate}
                 onChange={e => set({ revisedTargetDate: e.target.value })}
-                placeholder="e.g. 30 Jun 2027"
               />
             </div>
           )}

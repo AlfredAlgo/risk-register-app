@@ -3,7 +3,7 @@ import { ROLES } from '../data/orgStructure.js'
 import { BOARD_STAGES } from '../data/risks.js'
 import { formatDateShort, formatDateTime, computePortfolioTrend } from '../utils/helpers.jsx'
 import { getReminders } from '../utils/reminders.js'
-import { scopeRisksForRole, approverStageForRole, isReviewWindowOpen } from '../utils/permissions.js'
+import { scopeRisksForRole, approverStageForRole, isReviewWindowOpen, isReviewWindowEscalating } from '../utils/permissions.js'
 import { daysInStage, isStageOverdue } from '../utils/sla.js'
 import { StatTile, AnimatedBar } from './StatWidgets.jsx'
 import RiskHeatmap from './RiskHeatmap.jsx'
@@ -45,11 +45,28 @@ export default function DashboardView({
   const myStage = approverStageForRole(role)
   const [showExtendForm, setShowExtendForm] = useState(false)
   const [extendReason, setExtendReason] = useState('')
+  const [extendMemo, setExtendMemo] = useState(null)
+  const [extendAttachError, setExtendAttachError] = useState('')
+
+  function handleExtendAttach(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) {
+      setExtendAttachError('Keep the memo under 2MB for this demo.')
+      e.target.value = ''
+      return
+    }
+    setExtendAttachError('')
+    const reader = new FileReader()
+    reader.onload = () => setExtendMemo({ name: file.name, type: file.type, dataUrl: reader.result })
+    reader.readAsDataURL(file)
+  }
 
   function submitExtend() {
-    if (!extendReason.trim()) return
-    onExtendPeriod(extendReason.trim())
+    if (!extendReason.trim() || !extendMemo) return
+    onExtendPeriod(extendReason.trim(), extendMemo)
     setExtendReason('')
+    setExtendMemo(null)
     setShowExtendForm(false)
   }
 
@@ -126,7 +143,7 @@ export default function DashboardView({
             {period.open ? `Close FY ${period.fy} capture period` : `Open FY ${period.fy} capture period`}
           </button>
         )}
-        {(isCro || isDdg) && (
+        {isCro && (
           <button className="btn hero-btn" onClick={onOpenReviewWindowModal}>
             {reviewWindowActive ? 'Manage review window' : 'Open review window'}
           </button>
@@ -149,7 +166,7 @@ export default function DashboardView({
             <StatTile label="Needs attention (at risk + overdue)" value={counts.amber + counts.red} />
           </div>
 
-          {isCro && myNotifications.length > 0 && (
+          {myNotifications.length > 0 && (
             <div className="report-card" style={{ marginBottom: 16 }}>
               <h4>Notifications</h4>
               <div className="approval-list">
@@ -159,18 +176,19 @@ export default function DashboardView({
                       <div className="approval-title">{n.message}</div>
                       <div className="sub">{formatDateTime(n.timestamp)}</div>
                     </div>
-                    <button className="btn ghost sm" onClick={() => onOpenRisk(n.riskNr)}>View</button>
+                    {n.riskNr != null && <button className="btn ghost sm" onClick={() => onOpenRisk(n.riskNr)}>View</button>}
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {(isCro || isDdg) && reviewWindowActive && (
-            <div className="period-banner">
+          {(isCro || isDdg || role === 'director' || role === 'chiefdirector') && reviewWindowActive && (
+            <div className={'period-banner' + (isReviewWindowEscalating(reviewWindow) ? ' tone-warn' : '')}>
               <div>
                 Review window open — closes {formatDateShort(reviewWindow.closesAt)}. {reviewWindow.reason}
                 {touchedDuringWindow.length > 0 && ` · ${touchedDuringWindow.length} risk${touchedDuringWindow.length > 1 ? 's' : ''} updated so far.`}
+                {isReviewWindowEscalating(reviewWindow) && ' · Closing soon — risks not yet updated will escalate up the chain.'}
               </div>
             </div>
           )}
@@ -200,9 +218,18 @@ export default function DashboardView({
                     rows={2} value={extendReason} onChange={e => setExtendReason(e.target.value)}
                     placeholder="Reason for extending the period (kept for audit purposes)"
                   />
+                  <label className="field-caption">HOD-approved memo/letter (required before this can be sent)</label>
+                  <input type="file" onChange={handleExtendAttach} />
+                  {extendAttachError && <div className="form-error">{extendAttachError}</div>}
+                  {extendMemo && (
+                    <div className="attach-preview">
+                      📎 {extendMemo.name}
+                      <button type="button" className="link-btn" onClick={() => setExtendMemo(null)}>Remove</button>
+                    </div>
+                  )}
                   <div className="extend-form-actions">
-                    <button type="button" className="btn ghost sm" onClick={() => { setShowExtendForm(false); setExtendReason('') }}>Cancel</button>
-                    <button type="button" className="btn sm" disabled={!extendReason.trim()} onClick={submitExtend}>Extend period</button>
+                    <button type="button" className="btn ghost sm" onClick={() => { setShowExtendForm(false); setExtendReason(''); setExtendMemo(null) }}>Cancel</button>
+                    <button type="button" className="btn sm" disabled={!extendReason.trim() || !extendMemo} onClick={submitExtend}>Extend period</button>
                   </div>
                 </div>
               )}
@@ -213,6 +240,7 @@ export default function DashboardView({
               {period.history.slice().reverse().slice(0, 3).map(h => (
                 <div key={h.id} className="period-history-row">
                   <strong>{h.actor}</strong> ({h.role}) extended the period — {h.reason}
+                  {h.attachment && <> · <a className="link-btn" href={h.attachment.dataUrl} download={h.attachment.name}>📎 {h.attachment.name}</a></>}
                 </div>
               ))}
             </div>

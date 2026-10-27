@@ -106,12 +106,12 @@ export function emptyControl() {
 // on-track/at-risk/overdue status - "In Progress" replaces "On track" (the
 // client's own language) and "Implemented" is a real fourth state, not a
 // shade of on-track.
-export const ACTION_PLAN_STATUSES = ["inprogress", "atrisk", "overdue", "implemented"]
+export const ACTION_PLAN_STATUSES = ["notstarted", "inprogress", "atrisk", "overdue", "implemented"]
 export const actionPlanStatusLabel = {
-  inprogress: "In Progress", atrisk: "At risk", overdue: "Overdue", implemented: "Implemented"
+  notstarted: "Not started", inprogress: "In Progress", atrisk: "At risk", overdue: "Overdue", implemented: "Implemented"
 }
 export const actionPlanStatusTone = {
-  inprogress: "good", atrisk: "warn", overdue: "bad", implemented: "info"
+  notstarted: "neutral", inprogress: "good", atrisk: "warn", overdue: "bad", implemented: "info"
 }
 
 // Key Risk Indicators - modelled on the client's real ICTSS Risk Appetite

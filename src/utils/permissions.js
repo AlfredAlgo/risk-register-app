@@ -54,6 +54,22 @@ export function canValidateRemoval(role) {
   return role === 'riskcapturer'
 }
 
+// A review window is scheduled with explicit start/end dates (like a
+// calendar invite) rather than a duration counted from whenever it was
+// created, so it can be set up ahead of time and isn't "live" until its
+// own start date arrives.
 export function isReviewWindowOpen(reviewWindow) {
-  return Boolean(reviewWindow) && new Date(reviewWindow.closesAt) > new Date()
+  if (!reviewWindow) return false
+  const now = new Date()
+  return new Date(reviewWindow.opensAt) <= now && now <= new Date(reviewWindow.closesAt)
+}
+
+// True in the last 2 days before a window closes (or once it's closed) -
+// used to drive the escalation banner up the chain toward HOD.
+export function isReviewWindowEscalating(reviewWindow) {
+  if (!reviewWindow) return false
+  const now = new Date()
+  const closes = new Date(reviewWindow.closesAt)
+  const msToClose = closes.getTime() - now.getTime()
+  return msToClose <= 2 * 86400000
 }

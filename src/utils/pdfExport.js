@@ -1,6 +1,6 @@
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
-import { statusLabel } from "./helpers.jsx"
+import { statusLabel, actionPlanStatusLabel } from "./helpers.jsx"
 import logoUrl from "../assets/gpg-logo.png"
 
 // Brand palette, mirrored from src/index.css so the PDF reads as an
@@ -12,6 +12,18 @@ const INK_MUTED = [91, 100, 112]
 const LINE = [221, 227, 234]
 const STATUS_FILL = { green: [234, 243, 222], amber: [250, 238, 218], red: [252, 235, 235] }
 const STATUS_TEXT = { green: [59, 109, 17], amber: [133, 79, 11], red: [163, 45, 45] }
+
+// Darker, solid chips for IR/RR scores - banded by the score's own
+// magnitude (same 20/11 thresholds as the app's scoreClass helper), not by
+// the risk's on-track/at-risk/overdue status, which is a separate thing.
+const SCORE_FILL_HI = [153, 27, 27]
+const SCORE_FILL_MID = [154, 96, 10]
+const SCORE_FILL_LO = [40, 82, 20]
+function scoreTone(v) {
+  if (v >= 20) return SCORE_FILL_HI
+  if (v >= 11) return SCORE_FILL_MID
+  return SCORE_FILL_LO
+}
 
 const HEADER_H = 100
 const FOOTER_H = 40
@@ -41,6 +53,18 @@ function groupByOutcome(risks) {
     groups.get(r.outcome).push(r)
   })
   return groups
+}
+
+function joinCategoryList(items) {
+  return (items || []).map(x => `[${x.category}] ${x.text}`).join("\n")
+}
+
+function joinActionPlan(items) {
+  return (items || []).map(a => `${a.plan} (target ${a.target || "–"})`).join("\n")
+}
+
+function joinProgress(items) {
+  return (items || []).map(a => a.progress).filter(Boolean).join("\n")
 }
 
 export async function exportReportPdf({ risks, filterLabel, summary, byBU, byStatus }) {
@@ -181,6 +205,9 @@ export async function exportReportPdf({ risks, filterLabel, summary, byBU, bySta
 
   y = Math.max(afterBuY, doc.lastAutoTable.finalY) + 26
 
+  // Column order follows the walkthrough: identity fields, then root cause
+  // -> inherent -> controls -> residual -> action plan -> progress (the
+  // narrative text, not a percentage) -> status -> owner -> response last.
   const grouped = groupByOutcome(risks)
   let firstGroup = true
   for (const [outcome, groupRisks] of grouped) {
@@ -203,30 +230,57 @@ export async function exportReportPdf({ risks, filterLabel, summary, byBU, bySta
     autoTable(doc, {
       startY: y,
       margin: { left: marginX, right: marginX, top: HEADER_H, bottom: FOOTER_H },
-      head: [["Nr", "Business unit", "Risk", "Category", "IR", "RR", "Response", "Status", "Progress", "Target date", "Owner"]],
+      head: [["Nr", "Business unit", "Risk", "Category", "Root causes", "Consequence", "IR", "Controls", "RR", "Action plan", "Progress", "Status", "Owner", "Response"]],
       body: groupRisks.map(r => [
         r.nr,
         r.businessUnit,
         r.risk,
         r.category,
+        joinCategoryList(r.rootCauses),
+        (r.consequences || []).join("\n"),
         r.ir,
+        joinCategoryList(r.controls),
         r.rr,
-        r.response,
+        joinActionPlan(r.actionPlan),
+        joinProgress(r.actionPlan),
         statusLabel[r.status] || r.status,
-        `${r.progressPct}%`,
-        r.revisedTargetDate || r.targetDate,
-        r.ownership?.accountableUnit || ""
+        r.ownership?.accountableUnit || "",
+        r.response
       ]),
       theme: "grid",
-      headStyles: { fillColor: NAVY, fontSize: 8.5 },
-      styles: { fontSize: 8, cellPadding: 5, overflow: "linebreak", lineColor: LINE },
+      headStyles: { fillColor: NAVY, fontSize: 8 },
+      styles: { fontSize: 7.5, cellPadding: 4, overflow: "linebreak", lineColor: LINE, valign: "top" },
       columnStyles: {
-        2: { cellWidth: 165 },
-        10: { cellWidth: 125 }
+        0: { cellWidth: 20 },
+        1: { cellWidth: 55 },
+        2: { cellWidth: 76 },
+        3: { cellWidth: 46 },
+        4: { cellWidth: 70 },
+        5: { cellWidth: 60 },
+        6: { cellWidth: 22, halign: "center" },
+        7: { cellWidth: 70 },
+        8: { cellWidth: 22, halign: "center" },
+        9: { cellWidth: 70 },
+        10: { cellWidth: 60 },
+        11: { cellWidth: 42 },
+        12: { cellWidth: 50 },
+        13: { cellWidth: 44 }
       },
       didParseCell: data => {
-        if (data.section === "body" && data.column.index === 7) {
-          const r = groupRisks[data.row.index]
+        if (data.section !== "body") return
+        const r = groupRisks[data.row.index]
+        // IR / RR cells - dark chip coloured by the score's own magnitude.
+        if (data.column.index === 6) {
+          data.cell.styles.fillColor = scoreTone(r.ir)
+          data.cell.styles.textColor = [255, 255, 255]
+          data.cell.styles.fontStyle = "bold"
+        }
+        if (data.column.index === 8) {
+          data.cell.styles.fillColor = scoreTone(r.rr)
+          data.cell.styles.textColor = [255, 255, 255]
+          data.cell.styles.fontStyle = "bold"
+        }
+        if (data.column.index === 11) {
           data.cell.styles.fillColor = STATUS_FILL[r.status]
           data.cell.styles.textColor = STATUS_TEXT[r.status]
           data.cell.styles.fontStyle = "bold"
@@ -236,6 +290,35 @@ export async function exportReportPdf({ risks, filterLabel, summary, byBU, bySta
     })
     y = doc.lastAutoTable.finalY
   }
+
+  // Sign-off block - a placeholder signature section, not a real electronic
+  // signature integration (confirmed sufficient as-is during the demo).
+  if (y > pageH - FOOTER_H - 110) {
+    doc.addPage()
+    decoratePage()
+    y = HEADER_H + 6
+  }
+  y += 30
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(10.5)
+  doc.setTextColor(...NAVY)
+  doc.text("SIGN-OFF", marginX, y)
+  y += 10
+  autoTable(doc, {
+    startY: y,
+    margin: { left: marginX, right: marginX, top: HEADER_H, bottom: FOOTER_H },
+    head: [["Role", "Name", "Signature", "Date"]],
+    body: [
+      ["Compiled by (Risk Capturer)", "", "", ""],
+      ["Reviewed by (CRO)", "", "", ""],
+      ["Approved by (HOD)", "", "", ""]
+    ],
+    theme: "grid",
+    headStyles: { fillColor: NAVY, fontSize: 9 },
+    styles: { fontSize: 9, cellPadding: 10, lineColor: LINE },
+    columnStyles: { 0: { cellWidth: 170, fontStyle: "bold" }, 1: { cellWidth: 180 }, 2: { cellWidth: 180 }, 3: { cellWidth: 100 } },
+    didDrawPage: decoratePage
+  })
 
   finalizePageNumbers()
 

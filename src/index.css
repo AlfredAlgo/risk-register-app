@@ -232,6 +232,7 @@
   .approval-pill{display:inline-block;margin-top:4px;border:1px solid;border-radius:20px;padding:2px 9px;font-size:10.5px;font-weight:600;}
 
   .period-banner{border:1px solid;border-radius:8px;padding:9px 14px;font-size:12.5px;margin-bottom:10px;background:var(--gp-blue-100);border-color:var(--gp-blue-500);color:var(--gp-blue-700);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
+  .period-banner.tone-warn{background:var(--amber-bg);border-color:var(--amber-line);color:var(--amber-fg);}
   .extend-form{display:flex;flex-direction:column;gap:6px;width:280px;}
   .extend-form textarea{border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:12px;font-family:inherit;resize:vertical;}
   .extend-form-actions{display:flex;justify-content:flex-end;gap:6px;}

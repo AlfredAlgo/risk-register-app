@@ -1,4 +1,4 @@
-import { statusLabel } from "./helpers.jsx"
+import { statusLabel, actionPlanStatusLabel } from "./helpers.jsx"
 
 function csvCell(v) {
   const s = String(v ?? "")
@@ -9,19 +9,40 @@ function csvRow(cells) {
   return cells.map(csvCell).join(",")
 }
 
+function joinCategoryList(items) {
+  return (items || []).map(x => `[${x.category}] ${x.text}`).join("; ")
+}
+
+function joinActionPlan(items) {
+  return (items || []).map(a => `${a.plan} (${actionPlanStatusLabel[a.status] || a.status}, target ${a.target || "–"})`).join("; ")
+}
+
+function joinProgress(items) {
+  return (items || []).map(a => a.progress).filter(Boolean).join("; ")
+}
+
 export function exportReportCsv({ risks, filterLabel }) {
   const headers = [
     "Nr", "Risk type", "Outcome", "Business unit", "Category", "Risk",
-    "Inherent risk (IR)", "Residual risk (RR)", "Response", "Status", "Approval status",
-    "Progress %", "Target date", "Accountable unit", "Responsible person(s)", "Assessment date"
+    "Root causes", "Consequence",
+    "Inherent risk (IR)", "Inherent L×I",
+    "Controls",
+    "Residual risk (RR)", "Residual L×I",
+    "Action plan", "Progress", "Status", "Owner", "Response",
+    "Approval status", "Target date", "Assessment date"
   ]
 
   const rows = risks.map(r => [
     r.nr, r.riskType, r.outcome, r.businessUnit, r.category, r.risk,
-    r.ir, r.rr, r.response, statusLabel[r.status] || r.status, r.approvalStatus,
-    r.progressPct, r.revisedTargetDate || r.targetDate,
-    r.ownership?.accountableUnit, (r.ownership?.responsiblePersons || []).filter(Boolean).join("; "),
-    r.assessmentDate
+    joinCategoryList(r.rootCauses), (r.consequences || []).join("; "),
+    r.ir, `L${r.irLikelihood}×I${r.irImpact}`,
+    joinCategoryList(r.controls),
+    r.rr, `L${r.rrLikelihood}×I${r.rrImpact}`,
+    joinActionPlan(r.actionPlan), joinProgress(r.actionPlan),
+    statusLabel[r.status] || r.status,
+    r.ownership?.accountableUnit,
+    r.response,
+    r.approvalStatus, r.revisedTargetDate || r.targetDate, r.assessmentDate
   ])
 
   const lines = [

@@ -26,7 +26,7 @@ export default function ActionPlanField({ items, onChange }) {
           />
           <div className="ap-form-row">
             <input
-              type="text" placeholder="Target date"
+              type="date"
               value={a.target} onChange={e => setItem(i, { target: e.target.value })}
             />
             <select value={a.status} onChange={e => setItem(i, { status: e.target.value })}>

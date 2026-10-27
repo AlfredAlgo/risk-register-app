@@ -72,7 +72,10 @@ export default function RiskPanel({
   const pendingRemoval = risk.removalRequest?.status === 'Pending'
   const daysHere = daysInStage(risk)
   const overdue = isStageOverdue(risk, stageSla)
-  const canEditDuringReviewWindow = role === 'riskcapturer' && risk.approvalStatus === 'Approved' && isReviewWindowOpen(reviewWindow)
+  // The director (owns the business unit's action plans) makes review-window
+  // updates, not the risk capturer - the capturer's edit rights are for the
+  // normal capture/approval cycle only.
+  const canEditDuringReviewWindow = role === 'director' && risk.approvalStatus === 'Approved' && isReviewWindowOpen(reviewWindow)
 
   function submitComment(e) {
     e.preventDefault()
